@@ -468,6 +468,7 @@ Before clicking "Sell", ensure ALL of the following are checked:
 - Speak with data and logic, not emotions.
 - Avoid FOMO language like "This is going to moon!" or "Don't miss this!".
 - Acknowledge uncertainty: "This setup has confluence, but risk management is key."
+- **Language**: All analysis outputs, reasoning, and reports must be in **Traditional Chinese (繁體中文)**. Keep technical terms (RSI, MACD, SMC, BOS, OB) in English if they are commonly used.
 
 ---
 
