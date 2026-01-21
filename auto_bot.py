@@ -1,194 +1,209 @@
+"""
+Crypto Auto Trading Bot
+
+Automated market analysis using multi-timeframe data and
+SMC-based strategy from crypto_trading_skill.
+
+Features:
+- Multi-timeframe analysis (4H/1H/15m)
+- SMC structure identification (BOS/CHoCH)
+- Liquidity pool detection (EQH/EQL)
+- Fibonacci OTE zone analysis
+- RSI/MACD divergence detection
+- 8-factor confidence scoring
+- Complete trade setup (Entry/SL/TP)
+"""
+
 import time
-import os
-import pandas as pd
 from datetime import datetime
-from data_ingestion.fetch_latest import fetch_market_data
+from zoneinfo import ZoneInfo
 
-# --- Strategy Logic (Ported from Dashboard) ---
+from data_ingestion.fetch_latest import (
+    fetch_multi_timeframe_data,
+    determine_htf_bias,
+    calculate_asia_range,
+    get_current_session
+)
 
-def calculate_fibonacci(df):
-    """根据近期高低点计算斐波那契回撤位"""
-    swing_high = df['high'].max()
-    swing_low = df['low'].min()
-    
-    diff = swing_high - swing_low
-    
-    levels = {
-        '0.5': swing_high - 0.5 * diff,
-    }
-    
-    return levels, swing_high, swing_low
+from strategy.fibonacci import calculate_fib_from_df, identify_fib_confluence
+from strategy.smc import identify_structure, find_swing_points, get_nearest_poi
+from strategy.liquidity import get_liquidity_zones, check_liquidity_sweep
+from strategy.divergence import get_divergence_summary
+from strategy.trade_setup import calculate_trade_setup, format_trade_setup
+from strategy.confidence import calculate_confidence_score, format_confidence_score
 
-def get_asia_session_range(df):
-    """取得亞洲盤的高低點 (UTC 00:00 - 07:00)"""
-    try:
-        df_copy = df.copy()
-        if not isinstance(df_copy.index, pd.DatetimeIndex):
-            return None, None
-            
-        asia_mask = (df_copy.index.hour >= 0) & (df_copy.index.hour < 7)
-        asia_data = df_copy[asia_mask]
+
+def analyze_symbol(symbol: str, verbose: bool = True):
+    """
+    Perform complete multi-timeframe analysis on a symbol.
+    """
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"🔍 ANALYZING: {symbol}")
+        print(f"{'='*60}")
+    
+    # 1. Fetch multi-timeframe data
+    data = fetch_multi_timeframe_data(symbol)
+    if not data or "15m" not in data:
+        print(f"❌ Failed to fetch data for {symbol}")
+        return None
+    
+    df_4h = data.get("4h")
+    df_1h = data.get("1h")
+    df_15m = data.get("15m")
+    
+    current_price = df_15m['close'].iloc[-1]
+    rsi_15m = df_15m['rsi'].iloc[-1]
+    macd_hist = df_15m['macd_hist'].iloc[-1]
+    prev_macd_hist = df_15m['macd_hist'].iloc[-2] if len(df_15m) > 1 else 0
+    
+    # 2. Determine HTF Bias
+    htf_bias, bias_details = determine_htf_bias(df_4h, df_1h)
+    
+    # 3. Get current session and Asia range
+    session, session_desc = get_current_session()
+    ash, asl, asia_date, _ = calculate_asia_range(df_15m)
+    
+    # 4. SMC Structure Analysis
+    structure = identify_structure(df_15m)
+    swing_highs, swing_lows = find_swing_points(df_15m)
+    
+    # 5. Liquidity Analysis
+    liquidity_zones = get_liquidity_zones(df_15m)
+    liquidity_sweep = check_liquidity_sweep(df_15m, liquidity_zones)
+    
+    # 6. Fibonacci Analysis
+    fib_analysis = calculate_fib_from_df(df_15m, lookback=96)
+    
+    # 7. Divergence Analysis
+    divergence = get_divergence_summary(df_15m)
+    
+    if verbose:
+        print(f"\n📊 MARKET OVERVIEW")
+        print(f"   Price: ${current_price:,.2f}")
+        print(f"   RSI: {rsi_15m:.2f}")
+        print(f"   MACD Hist: {macd_hist:.4f}")
+        print(f"   Session: {session}")
         
-        if len(asia_data) >= 4:
-            asia_data_sorted = asia_data.sort_index()
-            recent_date = asia_data_sorted.index[-1].date()
-            today_asia = asia_data_sorted[asia_data_sorted.index.date == recent_date]
-            
-            if len(today_asia) > 0:
-                asia_high = today_asia['high'].max()
-                asia_low = today_asia['low'].min()
-                return asia_high, asia_low
+        print(f"\n📈 HTF BIAS: {'🟢' if htf_bias == 'BULLISH' else '🔴' if htf_bias == 'BEARISH' else '⚪'} {htf_bias}")
+        print(f"   Structure: {structure['structure']}")
+        print(f"   BOS: {structure['last_bos']}")
         
-        return None, None
-    except Exception:
-        return None, None
-
-def check_amd_session():
-    now_utc = datetime.utcnow()
-    hour = now_utc.hour
-    
-    session = "未知"
-    
-    if 0 <= hour < 7:
-        session = "亞洲盤 (Accumulation)"
-    elif 7 <= hour < 13:
-        session = "倫敦盤 (Manipulation)"
-    elif 13 <= hour < 16:
-        session = "倫敦/紐約重疊 (High Volatility)"
-    elif 16 <= hour < 22:
-        session = "紐約盤 (Distribution)"
-    else:
-        session = "紐約盤後"
-    
-    return session
-
-def calculate_confidence_score(df, is_long=True):
-    """計算信心分數，基於多個共振因子 (Simplified for CLI)"""
-    score = 0
-    factors = []
-    
-    last_rsi = df['rsi'].iloc[-1]
-    last_hist = df['macd_hist'].iloc[-1]
-    prev_hist = df['macd_hist'].iloc[-2] if len(df) > 1 else 0
-    
-    fib_levels, _, _ = calculate_fibonacci(df)
-    current_price = df['close'].iloc[-1]
-    equilibrium = fib_levels['0.5']
-    
-    asia_high, asia_low = get_asia_session_range(df)
-    
-    if is_long:
-        # 1. 大週期動能 (Simple 5-candle trend)
-        if df['close'].iloc[-1] > df['close'].iloc[-5]:
-            score += 1
-            factors.append('✅ 大週期多頭動能')
+        print(f"\n💧 LIQUIDITY")
+        print(f"   EQH Zones: {len(liquidity_zones['eqh'])}")
+        print(f"   EQL Zones: {len(liquidity_zones['eql'])}")
+        print(f"   EQH Swept: {liquidity_sweep['eqh_swept']}")
+        print(f"   EQL Swept: {liquidity_sweep['eql_swept']}")
         
-        # 2. RSI 共振
-        if last_rsi < 30:
-            score += 1
-            factors.append(f'✅ RSI 極度超賣 ({last_rsi:.1f})')
-        elif last_rsi < 40:
-            score += 0.5 # Partial score
-            factors.append(f'✅ RSI 超賣 ({last_rsi:.1f})')
+        print(f"\n📐 FIBONACCI")
+        print(f"   Zone: {fib_analysis['zone']}")
+        print(f"   In OTE: {fib_analysis['confluence']['is_ote']}")
         
-        # 3. MACD 共振
-        if last_hist > prev_hist:
-            score += 1
-            factors.append('✅ MACD 動能增強')
-            
-        # 4. Fib 區域
-        if current_price < equilibrium:
-            score += 1
-            factors.append('✅ 位於折扣區 (Discount)')
+        if divergence['has_divergence']:
+            print(f"\n⚡ DIVERGENCE DETECTED")
+            if divergence['rsi_divergence']:
+                print(f"   RSI: {divergence['rsi_divergence']['type']}")
+            if divergence['macd_divergence']:
+                print(f"   MACD: {divergence['macd_divergence']['type']}")
+    
+    # 8. Evaluate both LONG and SHORT setups
+    results = {'symbol': symbol, 'price': current_price, 'setups': []}
+    
+    for direction in ["LONG", "SHORT"]:
+        poi = get_nearest_poi(df_15m, direction)
         
-        # 5. Asia Range Sweep (Approximation)
-        if asia_low and abs(current_price - asia_low) / asia_low < 0.005:
-            score += 1
-            factors.append('✅ 接近亞洲低點 (可能 Sweep)')
-
-    else: # Short
-        if df['close'].iloc[-1] < df['close'].iloc[-5]:
-            score += 1
-            factors.append('✅ 大週期空頭動能')
+        # Get appropriate swing points for SL calculation
+        recent_swing_low = swing_lows[-1]['price'] if swing_lows else current_price * 0.98
+        recent_swing_high = swing_highs[-1]['price'] if swing_highs else current_price * 1.02
         
-        if last_rsi > 70:
-            score += 1
-            factors.append(f'✅ RSI 極度超買 ({last_rsi:.1f})')
-        elif last_rsi > 60:
-            score += 0.5
-            factors.append(f'✅ RSI 超買 ({last_rsi:.1f})')
+        # Calculate confidence score
+        score_result = calculate_confidence_score(
+            direction=direction,
+            htf_bias=htf_bias,
+            poi=poi,
+            fib_analysis=fib_analysis,
+            liquidity_sweep=liquidity_sweep,
+            rsi=rsi_15m,
+            macd_hist=macd_hist,
+            prev_macd_hist=prev_macd_hist,
+            ash=ash,
+            asl=asl,
+            current_price=current_price,
+            rsi_divergence=divergence.get('rsi_divergence'),
+            macd_divergence=divergence.get('macd_divergence')
+        )
+        
+        results['setups'].append({
+            'direction': direction,
+            'score': score_result['score'],
+            'rating': score_result['rating'],
+            'poi': poi,
+            'confidence': score_result
+        })
+        
+        # Only show high confidence setups (score >= 4)
+        if score_result['score'] >= 4:
+            if verbose:
+                print(f"\n{'🟢' if direction == 'LONG' else '🔴'} {direction} OPPORTUNITY")
+                print(format_confidence_score(score_result))
             
-        if last_hist < prev_hist:
-            score += 1
-            factors.append('✅ MACD 動能減弱')
+            # Generate trade setup
+            entry_price = poi['mid_price'] if poi else current_price
+            trade = calculate_trade_setup(
+                direction=direction,
+                entry_price=entry_price,
+                swing_low=recent_swing_low,
+                swing_high=recent_swing_high
+            )
             
-        if current_price > equilibrium:
-            score += 1
-            factors.append('✅ 位於溢價區 (Premium)')
+            if verbose:
+                print(f"\n{format_trade_setup(trade, symbol)}")
             
-        if asia_high and abs(current_price - asia_high) / asia_high < 0.005:
-            score += 1
-            factors.append('✅ 接近亞洲高點 (可能 Sweep)')
-            
-    # Session Check
-    session = check_amd_session()
-    if '倫敦' in session or '紐約' in session:
-        score += 1
-        factors.append(f'✅ {session}')
+            results['setups'][-1]['trade'] = trade
     
-    return score, factors
+    # Summary
+    if verbose:
+        long_score = next((s['score'] for s in results['setups'] if s['direction'] == 'LONG'), 0)
+        short_score = next((s['score'] for s in results['setups'] if s['direction'] == 'SHORT'), 0)
+        
+        print(f"\n{'='*60}")
+        print(f"📋 SUMMARY: {symbol}")
+        print(f"   LONG Score:  {long_score}/8")
+        print(f"   SHORT Score: {short_score}/8")
+        
+        if max(long_score, short_score) < 4:
+            print(f"\n   ⚪ No strong setup. WAIT for better confluence.")
+        print(f"{'='*60}")
+    
+    return results
 
-# --- Main Bot Loop ---
-
-def analyze_symbol(symbol):
-    print(f"Analyzing {symbol}...")
-    df = fetch_market_data(symbol)
-    
-    if df is None:
-        print(f"Failed to fetch data for {symbol}")
-        return
-
-    # Check Long
-    long_score, long_factors = calculate_confidence_score(df, is_long=True)
-    
-    # Check Short
-    short_score, short_factors = calculate_confidence_score(df, is_long=False)
-    
-    current_price = df['close'].iloc[-1]
-    
-    print(f"Price: {current_price:.2f} | RSI: {df['rsi'].iloc[-1]:.2f}")
-    
-    # Alert Logic
-    if long_score >= 4:
-        print(f"\n🟢 [ALERT] {symbol} LONG Opportunity (Score: {long_score}/6)")
-        for f in long_factors:
-            print(f"  - {f}")
-    
-    if short_score >= 4:
-        print(f"\n🔴 [ALERT] {symbol} SHORT Opportunity (Score: {short_score}/6)")
-        for f in short_factors:
-            print(f"  - {f}")
-            
-    if long_score < 4 and short_score < 4:
-        print(f"⚪ No strong setup. (Long: {long_score}, Short: {short_score})")
-    
-    print("-" * 30)
 
 def main():
-    print("🤖 Crypto Auto Bot Initialized...")
-    print("Time interval: 60 minutes")
+    """Main bot loop."""
+    taipei_tz = ZoneInfo("Asia/Taipei")
+    
+    print("🤖 Crypto Auto Bot v2.0 - Multi-Timeframe Analysis")
+    print("=" * 60)
+    print(f"Strategy: SMC + RSI/MACD Confluence")
+    print(f"Timeframes: 4H (Bias) → 1H (Confirm) → 15m (Execute)")
+    print(f"Scan Interval: 60 minutes")
+    print("=" * 60)
     
     while True:
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting Scan...")
+        now = datetime.now(taipei_tz)
+        print(f"\n⏰ [{now.strftime('%Y-%m-%d %H:%M:%S')}] Starting Scan...")
         
         try:
             analyze_symbol("BTCUSDT")
             analyze_symbol("ETHUSDT")
         except Exception as e:
-            print(f"An error occurred: {e}")
+            print(f"❌ Error during analysis: {e}")
+            import traceback
+            traceback.print_exc()
         
-        print("Scan complete. Sleeping for 60 minutes...")
+        print(f"\n💤 Scan complete. Sleeping for 60 minutes...")
         time.sleep(3600)
+
 
 if __name__ == "__main__":
     main()
