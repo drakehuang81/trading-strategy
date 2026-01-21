@@ -1,6 +1,9 @@
+# Core Dependencies
 python-binance
 pandas
+numpy
 python-dotenv
-streamlit
-plotly
 ta
+
+# Testing
+pytest
