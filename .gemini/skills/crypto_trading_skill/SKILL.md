@@ -808,3 +808,313 @@ Before outputting any trade setup, calculate a **Confidence Score** based on how
 > ```
 >
 > **Action:** Do not trade. Set alerts at $95 (potential ASL) and $105 (potential ASH). Reassess during London session for a potential AMD setup.
+
+---
+
+## Multi-Timeframe Execution Framework 🕐
+
+根據不同交易風格和風險偏好，支援多種執行時間框架。
+
+### Timeframe Selection Guide
+
+| Execution TF | HTF Bias | Trade Style | Hold Time | Typical R:R |
+|--------------|----------|-------------|-----------|-------------|
+| **3m** | 15m / 30m | Ultra Scalp | 5-30 分鐘 | 1:1.5 - 1:2 |
+| **5m** | 30m / 1H | Fast Scalp | 15-60 分鐘 | 1:2 - 1:2.5 |
+| **15m** | 1H / 4H | Standard Scalp | 30 分鐘 - 4 小時 | 1:2.5 - 1:4 |
+
+### 3 分鐘線執行 (Ultra Scalp)
+
+**適用場景：**
+- 高波動時段 (London/NY Killzone)
+- 流動性掃盤剛發生，需要快速反應
+- 明確的 V 型反轉形態
+
+**HTF Bias 來源：** 15m 或 30m 結構
+**確認信號：** 3m CHoCH / 錘子線 / 放量拒絕
+**風險控制：** 單筆最大 0.5% 風險，槓桿 ≤ 5x
+
+### 5 分鐘線執行 (Fast Scalp)
+
+**適用場景：**
+- London Killzone 流動性掃盤後
+- 2B 反轉明確形成
+- 需要比 15m 更早進場但比 3m 更穩定
+
+**HTF Bias 來源：** 30m 或 1H 結構
+**確認信號：** 5m CHoCH / BOS / 2B 反轉 / RSI 反轉
+**風險控制：** 單筆最大 0.75% 風險，槓桿 ≤ 7x
+
+### 15 分鐘線執行 (Standard Scalp) - 預設
+
+**適用場景：**
+- AMD Model 完整執行
+- 等待更穩健的結構確認
+- 適合較高 R:R 的波段交易
+
+**HTF Bias 來源：** 1H 或 4H 結構
+**確認信號：** 15m CHoCH / BOS / Engulfing / RSI+MACD 共振
+**風險控制：** 單筆最大 1% 風險，槓桿 ≤ 10x
+
+---
+
+## Trend Direction Analysis (大方向趨勢) 📈📉
+
+在每次分析報告中，必須明確輸出以下趨勢判斷：
+
+### HTF Trend Matrix
+
+| Timeframe | Structure | Bias | Weight |
+|-----------|-----------|------|--------|
+| **4H** | HH/HL or LH/LL | Primary Bias | 40% |
+| **1H** | HH/HL or LH/LL | Secondary Bias | 30% |
+| **15m/30m** | Structure Alignment | Confirmation | 30% |
+
+### Trend Classification
+
+| 分類 | 條件 | 交易建議 |
+|------|------|----------|
+| 🟢 **強勢多頭** | 4H+1H 都是 HH/HL，RSI > 50 | 只做多，回調買入 |
+| 🟡 **弱勢多頭** | 4H 多頭但 1H 開始出現 LH | 謹慎做多，減少倉位 |
+| ⚪ **中性震盪** | 4H+1H 無明確結構 | 等待突破，或區間高空低多 |
+| 🟡 **弱勢空頭** | 4H 空頭但 1H 開始出現 HL | 謹慎做空，減少倉位 |
+| 🔴 **強勢空頭** | 4H+1H 都是 LH/LL，RSI < 50 | 只做空，反彈放空 |
+
+---
+
+## Trading Bias Output (交易偏好) 🎯
+
+每次報告必須包含以下三種交易偏好建議：
+
+### 1. 短線即時交易 (Scalp Now)
+
+針對 **3m/5m** 執行，適合當下立即進場。
+
+```
+📍 SCALP NOW (3m/5m)
+━━━━━━━━━━━━━━━━━━━━
+Direction:     LONG / SHORT / WAIT
+Entry Zone:    $XXX - $XXX
+Trigger:       [具體觸發條件，如 5m 收盤站上 $XXX]
+Stop Loss:     $XXX
+Target:        $XXX (R:R 1:X)
+Confidence:    X/8
+Timeframe:     3m / 5m
+```
+
+### 2. 標準波段交易 (Swing Entry)
+
+針對 **15m** 執行，等待更穩健的結構確認。
+
+```
+📍 SWING ENTRY (15m)
+━━━━━━━━━━━━━━━━━━━━
+Direction:     LONG / SHORT / WAIT
+Entry Zone:    $XXX - $XXX
+Trigger:       [15m 結構確認條件]
+Stop Loss:     $XXX
+TP1:           $XXX (R:R 1:X)
+TP2:           $XXX (R:R 1:X)
+Confidence:    X/8
+Timeframe:     15m
+```
+
+### 3. 提前佈局 (Advance Position)
+
+在關鍵 POI 預先掛單，等待價格回踩。
+
+```
+📍 ADVANCE POSITION (預掛單)
+━━━━━━━━━━━━━━━━━━━━
+Direction:     LONG / SHORT
+POI Zone:      $XXX - $XXX
+Limit Order:   $XXX
+Stop Loss:     $XXX
+Target:        $XXX (R:R 1:X)
+Validity:      [有效時間，如 London Session 前]
+Confidence:    X/8
+Note:          [觸發條件或失效條件]
+```
+
+---
+
+## Enhanced Report Template 📋
+
+每次分析報告必須使用以下完整格式：
+
+### 報告結構
+
+```markdown
+# 📊 [SYMBOL] 交易分析報告
+**時間：** YYYY-MM-DD HH:MM (UTC+8)
+
+---
+
+## 🎯 大方向趨勢 (Macro Trend)
+
+| Timeframe | Structure | Bias | RSI |
+|-----------|-----------|------|-----|
+| 4H | HH/HL or LH/LL | 🟢/🔴/⚪ | XX |
+| 1H | HH/HL or LH/LL | 🟢/🔴/⚪ | XX |
+| 15m | Structure | 🟢/🔴/⚪ | XX |
+
+**整體趨勢判斷：** 🟢 強勢多頭 / 🟡 弱勢多頭 / ⚪ 中性 / 🟡 弱勢空頭 / 🔴 強勢空頭
+
+**趨勢說明：** [用 1-2 句話描述當前市場狀態]
+
+---
+
+## 📍 關鍵價位 (Key Levels)
+
+| Level | Price | Description |
+|-------|-------|-------------|
+| Resistance 1 | $XXX | [描述] |
+| Resistance 2 | $XXX | [描述] |
+| Current Price | $XXX | --- |
+| Support 1 | $XXX | [描述] |
+| Support 2 | $XXX | [描述] |
+| ASH | $XXX | Asia Session High |
+| ASL | $XXX | Asia Session Low |
+
+---
+
+## 🔥 交易偏好 (Trading Bias)
+
+### 短線即時交易 (3m/5m Scalp)
+[輸出 SCALP NOW 格式]
+
+### 標準波段交易 (15m Swing)
+[輸出 SWING ENTRY 格式]
+
+### 提前佈局 (Advance Position)
+[輸出 ADVANCE POSITION 格式]
+
+---
+
+## 📊 技術指標狀態 (Indicator Status)
+
+| Indicator | 15m | 1H | 4H |
+|-----------|-----|-----|-----|
+| RSI (14) | XX | XX | XX |
+| MACD Line | +/- | +/- | +/- |
+| MACD Hist | 擴張/收斂 | 擴張/收斂 | 擴張/收斂 |
+
+---
+
+## ⚠️ 風險警告 (Risk Warning)
+
+- [風險點 1]
+- [風險點 2]
+- [近期重大事件提醒]
+
+---
+
+## 💡 行動計劃 (Action Plan)
+
+1. **若價格向上突破 $XXX：** [行動建議]
+2. **若價格向下跌破 $XXX：** [行動建議]
+3. **觀察時間：** [下一個關鍵時間點]
+```
+
+---
+
+## Volume Confirmation (成交量確認) - 可選
+
+整合新策略的 Volume 分析，作為額外的共振因子。
+
+### Volume Signals
+
+| Signal | Description | How to Use |
+|--------|-------------|------------|
+| **放量拒絕** | 價格觸及關鍵位時出現大陰/陽線並放量 | 確認反轉力道，增加 Confidence +1 |
+| **縮量回調** | 回調過程中成交量萎縮 | 確認回調健康，可能是好的入場點 |
+| **突破放量** | 關鍵位突破時成交量放大 | 確認突破有效，非假突破 |
+| **背離** | 價格新高/新低但成交量未創新高/低 | 警告動能衰竭 |
+
+> ⚠️ **注意：** 加密市場 24/7，Volume 數據可靠性不如傳統市場。Volume 信號作為輔助確認，不替代 SMC 結構。
+
+---
+
+## Updated Confidence Score (更新後的評分系統)
+
+新增 Volume 因子，評分系統從 8 分制更新為 9 分制。
+
+### Confluence Factors Checklist (9 Factors)
+
+| # | Factor | Description | Points |
+|---|--------|-------------|--------|
+| 1 | **HTF Bias Aligned** | 4H/1H structure supports trade direction | ⭐ |
+| 2 | **SMC POI Present** | Entry at Order Block, FVG, or Mitigation Block | ⭐ |
+| 3 | **Fibonacci Confluence** | POI aligns with 0.618-0.786 (OTE) zone | ⭐ |
+| 4 | **Liquidity Swept** | EQH/EQL has been taken before entry | ⭐ |
+| 5 | **RSI Confluence** | RSI oversold/overbought OR divergence | ⭐ |
+| 6 | **MACD Confluence** | Signal cross or histogram shift | ⭐ |
+| 7 | **AMD Session Alignment** | London Killzone or NY session | ⭐ |
+| 8 | **Asia Range Sweep** | ASH/ASL swept before reversal | ⭐ |
+| 9 | **Volume Confirmation** | Volume spike at rejection or breakout | ⭐ (NEW) |
+
+### Updated Scoring Rubric
+
+| Score | Rating | Recommendation |
+|-------|--------|----------------|
+| **9/9** | ⭐⭐⭐⭐⭐ **S+ Setup** | 完美共振，全倉進場 |
+| **8/9** | ⭐⭐⭐⭐⭐ **A+ Setup** | 極高機率，標準倉位 |
+| **7/9** | ⭐⭐⭐⭐⭐ **A Setup** | 高機率，標準倉位 |
+| **6/9** | ⭐⭐⭐⭐ **B+ Setup** | 良好，標準倉位 |
+| **5/9** | ⭐⭐⭐⭐ **B Setup** | 可接受，標準倉位 |
+| **4/9** | ⭐⭐⭐ **C Setup** | 邊緣，減半倉位 (0.5%) |
+| **≤3/9** | ⭐⭐ **D/F Setup** | 不交易 |
+
+---
+
+## Funding Rate Filter (資金費率篩選器) 🚦
+
+資金費率作為 **獨立風險篩選器**，不計入 9 因子評分，但會影響最終倉位大小。
+
+### 資金費率分類
+
+| 分類 | 費率範圍 | 狀態 | 行動 |
+|------|----------|------|------|
+| **NORMAL** | -0.05% ~ +0.05% | ✅ 正常 | 按標準倉位執行 |
+| **HIGH** | ±0.05% ~ ±0.1% | ⚠️ 偏高 | 減半倉位 (0.5% risk) |
+| **EXTREME** | 超過 ±0.1% | 🛑 極端 | 暫停交易 |
+
+### 方向風險評估
+
+| 費率情況 | 做多 (LONG) | 做空 (SHORT) |
+|----------|-------------|--------------|
+| **正費率 > +0.05%** | ⚠️ 擁擠，減倉 | ✅ 可執行 |
+| **負費率 < -0.05%** | ✅ 可執行 | ⚠️ 擁擠，減倉 |
+| **正費率 > +0.1%** | 🛑 停止 | ⚠️ 謹慎 |
+| **負費率 < -0.1%** | ⚠️ 謹慎 | 🛑 停止 |
+
+### 報告輸出格式
+
+```
+🚦 RISK FILTER: Funding Rate
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Current Rate:    +0.0230%
+   Status:          ✅ NORMAL
+   Action:          PROCEED
+   Risk Multiplier: 1.0x
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   資金費率正常，市場情緒中性
+```
+
+### 使用邏輯
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  FUNDING RATE 使用流程                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   📍 9 因子評分 → 決定是否有 Setup                           │
+│                    ↓                                        │
+│   🚦 Funding Rate → 決定倉位大小 / 是否跳過                  │
+│                    ↓                                        │
+│   💰 最終倉位 = 標準倉位 × Risk Multiplier                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+> ⚠️ **注意：** 資金費率只適用於 **永續合約 (Perpetual)**，現貨交易無此數據。

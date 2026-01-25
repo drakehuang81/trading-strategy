@@ -8,15 +8,30 @@ the crypto trading skill's top-down analysis approach.
 - 1H: Trend confirmation + BOS/CHoCH identification
 - 15m: Execution timeframe + POI identification
 - Asia Session: ASH/ASL for AMD model analysis
+- Funding Rate: Risk filter for position sizing
 """
 
 import os
+import sys
 import pandas as pd
 from binance.client import Client
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from strategy.funding_rate import (
+        fetch_funding_rate,
+        evaluate_funding_rate,
+        format_funding_rate_filter
+    )
+    FUNDING_RATE_AVAILABLE = True
+except ImportError:
+    FUNDING_RATE_AVAILABLE = False
 
 # Timeframe configurations
 TIMEFRAMES = {
@@ -392,6 +407,20 @@ def print_comprehensive_summary(symbol, data):
             print("   ACTIVE - Watch for liquidity sweeps at ASH/ASL")
         else:
             print("   Monitor for confluence setups")
+
+    # Funding Rate Filter
+    if FUNDING_RATE_AVAILABLE:
+        try:
+            funding_data = fetch_funding_rate(symbol)
+            if funding_data.get('available'):
+                evaluation = evaluate_funding_rate(funding_data['rate'])
+                print(format_funding_rate_filter(funding_data, evaluation))
+            else:
+                print("\n🚦 RISK FILTER: Funding Rate")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("   Status: ❓ N/A (Futures data unavailable)")
+        except Exception as e:
+            print(f"\n🚦 Funding Rate: Error fetching data - {e}")
 
     print(f"\n{'='*60}\n")
 

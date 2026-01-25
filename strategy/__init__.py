@@ -10,7 +10,8 @@ Modules:
 - liquidity: EQH/EQL liquidity pool identification
 - divergence: RSI/MACD divergence detection
 - trade_setup: Entry/SL/TP calculation
-- confidence: 8-factor confidence scoring system
+- confidence: 9-factor confidence scoring system
+- funding_rate: Funding rate risk filter (independent)
 """
 
 from strategy.fibonacci import (
@@ -49,6 +50,13 @@ from strategy.confidence import (
     get_position_recommendation
 )
 
+from strategy.funding_rate import (
+    fetch_funding_rate,
+    evaluate_funding_rate,
+    get_position_adjustment,
+    format_funding_rate_filter
+)
+
 __all__ = [
     # Fibonacci
     'calculate_fib_levels',
@@ -74,4 +82,10 @@ __all__ = [
     # Confidence
     'calculate_confidence_score',
     'get_position_recommendation',
+    # Funding Rate
+    'fetch_funding_rate',
+    'evaluate_funding_rate',
+    'get_position_adjustment',
+    'format_funding_rate_filter',
 ]
+
