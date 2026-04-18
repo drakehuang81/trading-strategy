@@ -1,0 +1,18 @@
+mode: paper            # paper | live — live blocked by pre_live_gate (§10)
+watchlist: ["ETHUSDT"]
+risk:
+  net_directional_cap:
+    enabled: false     # §7.6 stub
+    max_net_long: 0.5
+    max_net_short: 0.5
+  daily_loss_r_multiple: -2.0
+  max_trades_per_day: 10
+  max_concurrent_positions: 3
+  spread_bps_max: 20
+  fixed_fractional_equity_risk: 0.0025
+  dust_balance_threshold: 0.01
+fees:
+  maker_bps: 2
+  taker_bps: 5
+database:
+  sqlite_path: "data/state.db"
