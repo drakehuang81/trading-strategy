@@ -2,7 +2,7 @@
 Unit tests for strategy/trade_setup.py
 """
 import pytest
-from strategy.trade_setup import calculate_trade_setup, format_trade_setup
+from decision._legacy.trade_setup import calculate_trade_setup, format_trade_setup
 
 
 class TestCalculateTradeSetup:
