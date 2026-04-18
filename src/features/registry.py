@@ -66,3 +66,28 @@ class FeatureRegistry:
         for f in self._features:
             out[f.name] = f.compute(df, as_of)
         return out
+
+
+def build_default_registry(
+    *,
+    symbol: str = "ETHUSDT",
+    confidence_direction: str = "long",
+) -> FeatureRegistry:
+    """Canonical Plan-1 feature set. Order is stable and part of the
+    canonical hash — do not reshuffle without bumping
+    FEATURE_REGISTRY_VERSION."""
+    from features.confidence import ConfidenceFeature
+    from features.divergence import DivergenceFeature
+    from features.fibonacci import FibFeature
+    from features.funding_rate import FundingFeature
+    from features.liquidity import LiquidityFeature
+    from features.smc import SMCFeature
+
+    return FeatureRegistry([
+        SMCFeature(),
+        FibFeature(),
+        LiquidityFeature(),
+        DivergenceFeature(),
+        FundingFeature(symbol=symbol),
+        ConfidenceFeature(direction=confidence_direction),
+    ])
