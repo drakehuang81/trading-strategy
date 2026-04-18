@@ -8,3 +8,6 @@ __pycache__/
 *.log
 .superpowers/
 .worktrees/
+data/state.db
+data/ticks/
+data/feature_cache/
