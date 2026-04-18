@@ -1,0 +1,30 @@
+[tool.pytest.ini_options]
+# Both rootdir (".") and "src" on path: lets tests import `tests.helpers.X`
+# as well as src-layer modules (`features.smc`, etc.).
+pythonpath = [".", "src"]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "contract: cross-implementation contract tests",
+    "e2e: end-to-end scenario tests",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
+# Targeted relaxations for third-party libs without stubs
+[[tool.mypy.overrides]]
+module = ["binance.*", "ta.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]  # line-length handled by formatter
