@@ -1,9 +1,24 @@
-# Core Dependencies
-python-binance
-pandas
-numpy
-python-dotenv
-ta
+# Core runtime
+python-binance>=1.0.29
+pandas>=2.2,<3
+numpy>=1.26,<2
+python-dotenv>=1.0
+ta>=0.11
+
+# Data model / validation
+pydantic>=2.6,<3
+
+# State
+SQLAlchemy>=2.0,<3
+alembic>=1.13,<2
+
+# Observability
+structlog>=24.1
 
 # Testing
-pytest
+pytest>=8.1
+pytest-asyncio>=0.23
+
+# Dev tooling
+mypy>=1.10
+ruff>=0.4
