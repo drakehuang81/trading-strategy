@@ -140,6 +140,7 @@ class DataSource(Protocol):
 # src/features/base.py
 class Feature(Protocol):
     name: str
+    version: str                         # bumped on logic change
     required_lookback: int
 
     def compute(self, df: pd.DataFrame, as_of: datetime) -> dict:
@@ -148,6 +149,29 @@ class Feature(Protocol):
 ```
 
 Registry enumerates features and composes feature vectors. Existing SMC / Fib / Liquidity / Divergence / Funding / Confidence are each refactored to implement `Feature`.
+
+**Reproducibility contract (`feature_snapshot_hash`)**:
+
+```python
+# src/features/registry.py
+FEATURE_REGISTRY_VERSION = "1.0.0"   # bumped on registry change
+
+def canonical_hash(features: dict) -> str:
+    """Deterministic hash of a feature vector.
+    Float serialization uses repr() to preserve bit-exact representation.
+    NaN is serialized as the literal string 'NaN'."""
+    payload = json.dumps(
+        features,
+        sort_keys=True,
+        default=_canonical_float,  # floats → repr, NaN → "NaN"
+        ensure_ascii=True,
+    )
+    return sha256(
+        f"{FEATURE_REGISTRY_VERSION}|{payload}".encode()
+    ).hexdigest()
+```
+
+`feature_registry_version` is recorded on every `TradeProposal` and every `broker_event` to make audit trails unambiguous across feature-logic revisions.
 
 ### 4.3 Model Layer
 
@@ -163,27 +187,44 @@ class PredictionBundle(BaseModel):
     size_multiplier: float = 1.0       # set by Ensemble; 0.0 on LLM context_veto
     veto_reason: str | None = None
     feature_snapshot_hash: str
+    feature_registry_version: str      # §4.2 registry version
+    ml_model_version: str              # XGBoost model hash
+    llm_prompt_version: str            # LLMContextProvider prompt hash
     predictions_detail: dict           # per-predictor raw outputs for audit
 
 class Predictor(Protocol):
     async def predict(self, features: dict) -> PredictionBundle: ...
+
+class LLMContextFlags(BaseModel):
+    context_veto: bool
+    veto_reason: str | None
+    structural_flags: list[str]
+
+class LLMContextProvider(Protocol):
+    """Distinct Protocol — not a Predictor. Emits boolean/categorical
+    flags only; never outputs prob_up. Gemma's numeric probabilities
+    are uncalibrated and deliberately excluded from the calibrated
+    pipeline."""
+    prompt_version: str
+
+    async def flags(self, features: dict) -> LLMContextFlags: ...
 ```
 
-Two concrete components — one `Predictor`, one separate context provider:
+Two concrete components — one `Predictor`, one `LLMContextProvider`:
 
 - **`XGBPredictor`** (implements `Predictor`, primary signal) — calibrated direction classifier; emits `direction`, `prob_up`.
-- **`LLMContextProvider`** (**not** a `Predictor`; distinct role) — emits `LLMContextFlags(context_veto: bool, veto_reason: str|None, structural_flags: list[str])`. Uses Gemma 4 E4B via Ollama with `instructor` + Pydantic v2, `temperature=0`, JSON schema enforced. Does **not** output `prob_up`.
+- **`GemmaContextProvider`** (implements `LLMContextProvider`) — uses Gemma 4 E4B via Ollama with `instructor.patch(mode=Mode.JSON)` (tool-calling mode is unreliable on Gemma) + Pydantic v2, `temperature=0`, JSON schema enforced. The prompt text lives in `config/prompts/context_provider.md`; `prompt_version = sha256(prompt_bytes)`; CI asserts the code-side constant matches the file.
 
 `Ensemble` implements `Predictor` and combines the two:
 
 ```python
 # src/decision/ensemble.py
 class Ensemble(Predictor):
-    def __init__(self, ml: Predictor, llm: LLMContextProvider): ...
+    def __init__(self, ml: Predictor, llm_ctx: LLMContextProvider): ...
 
     async def predict(self, features: dict) -> PredictionBundle:
         ml_pred = await self.ml.predict(features)
-        flags = await self.llm.flags(features)
+        flags = await self.llm_ctx.flags(features)
         if flags.context_veto:
             return ml_pred.model_copy(update={
                 "size_multiplier": 0.0,
@@ -289,24 +330,61 @@ class BrokerEvent(BaseModel):
     reason: str | None = None
 
 class Broker(Protocol):
+    """Request/response surface — fully contract-testable on every impl."""
     async def submit(self, order: Order) -> OrderId: ...
     async def cancel(self, order_id: OrderId) -> None: ...
-    def events(self) -> AsyncIterator[BrokerEvent]: ...
     async def positions(self) -> list[Position]: ...
     async def balance(self) -> Balance: ...
+
+class BrokerEventStream(Protocol):
+    """Async event stream — separate Protocol because event ordering /
+    timing is non-deterministic on PaperBroker (random fills) and
+    undriven on LiveBroker. Contract tests run against ReplayBroker
+    with a recorded JSONL fixture; other impls are tested via
+    seeded/mocked variants."""
+    def events(self) -> AsyncIterator[BrokerEvent]: ...
 ```
 
-Three implementations:
+Three implementations (each implements both `Broker` and `BrokerEventStream`):
 
-- **`PaperBroker`** (Day 1) — simulates latency (default 200 ms + jitter), fee split (maker/taker), slippage as `f(spread, size/ADV)`, probabilistic partial fill, rejection, funding charged every 8 hours on open positions.
-- **`ReplayBroker`** — reads recorded live tick JSONL; the ONLY credible pre-live test.
-- **`LiveBroker(Binance)`** — class stub on Day 1; filled when pre-live gate (§10) is green.
+- **`PaperBroker`** (Day 1) — simulates:
+  - Latency: `Normal(mean=200ms, stdev=50ms)`.
+  - Fees: maker/taker split from `config.fees`.
+  - Slippage: `f(spread, size/ADV)` via the same cost model used by `scripts/backtest.py` (single source of truth).
+  - Partial fills: probabilistic by order size vs book depth estimate.
+  - Rejection: probability driven by spread anomaly or balance shortfall.
+  - **Funding rate source**: replays historical funding rate aligned to candle timestamp from `data/funding/<symbol>.parquet`. Fixed assumption (e.g. 0.01%) is reserved for unit tests only — config must pick one explicitly.
+  - Accepts injected `rng: random.Random` so tests can seed deterministic runs.
+- **`ReplayBroker`** — reads recorded live tick JSONL produced by `TickRecorder` (§4.9); the ONLY credible pre-live test. Fully deterministic.
+- **`LiveBroker(Binance)`** — class stub on Day 1; filled when pre-live gate (§10) is green. Contract-tested via recorded VCR-style Binance API fixtures for request/response surface only; event stream is not contract-tested on Live (driven by exchange, exercised only in Replay).
 
 ### 4.6 Interface Layer
 
-- **Telegram bot** (`python-telegram-bot` v20+, asyncio native). Commands: `/analyze <symbol>`, `/positions`, `/status`, `/halt`, `/resume`, `/accept_broker`, plus free-text → ChatLLM.
-- **ChatLLM** — Gemma 4 E4B (same Ollama process as LLMContextProvider but **different Python class, different prompt, different schema**). Has `READ_ONLY_TOOLS` only: `get_positions`, `get_recent_proposals`, `get_pnl_summary`, `get_feature_snapshot`. Cannot submit orders — enforced by tool registry and covered by contract test.
+- **Telegram bot** (`python-telegram-bot` v20+, asyncio native). Commands: `/analyze <symbol>`, `/positions`, `/status`, `/halt`, `/resume`, `/accept_broker`, plus free-text → ChatLLM. PTB's `stop_signals=None` is set to avoid collision with apscheduler's signal handlers; shutdown is orchestrated via the `TaskGroup` supervisor (§4.8).
+- **ChatLLM** — Gemma 4 E4B via the shared `OllamaClient` (below). **Different Python class, different prompt, different schema** from `LLMContextProvider`. Has `READ_ONLY_TOOLS` only: `get_positions`, `get_recent_proposals`, `get_pnl_summary`, `get_feature_snapshot`. Cannot submit orders — enforced by tool registry and covered by a boundary contract test.
 - **CLI** — single entry `python -m orchestrator`. Not a user UI; ops-only.
+
+#### 4.6.1 Shared `OllamaClient` with priority queue
+
+```python
+# src/models/llm/ollama_client.py
+class OllamaClient:
+    """Single client owning the Semaphore. All LLM calls route here.
+    Priority queue: scheduled_macro (high) > on_demand_deep (med) > chat (low).
+    Streaming yields the semaphore between chunks when a higher-priority
+    request arrives (cooperative preemption)."""
+
+    def __init__(self):
+        self._sem = asyncio.Semaphore(1)
+        self._pending: asyncio.PriorityQueue = asyncio.PriorityQueue()
+
+    async def complete(self, prompt: str, schema: type[BaseModel],
+                       priority: Priority) -> BaseModel: ...
+    async def stream(self, prompt: str, priority: Priority,
+                     preemptable: bool = True) -> AsyncIterator[str]: ...
+```
+
+Both `GemmaContextProvider` and `ChatLLM` use this client. An `/analyze` streaming reply started during a hourly scan is preempted between tokens if the scan slot opens up, then resumes. This avoids the two worst cases: (a) 16 GB OOM from two concurrent Gemma instances, (b) chat blocking a scan for ~30 s.
 
 ### 4.7 Reconciliation
 
@@ -324,6 +402,64 @@ class LiveConfirmViaTelegram:
 ```
 
 Policy is swapped at the paper↔live boundary alongside `Broker`.
+
+**Scope**: reconciliation covers both **positions** and **balance**. Balance diffs below the dust threshold (config, default: `0.01 USDT`) are logged but not treated as a diff; above threshold, they trigger the same policy path as position diffs. This catches silent fee/funding drift.
+
+### 4.8 Task Lifecycle
+
+All long-lived work runs under a single `asyncio.TaskGroup` (Python 3.11) with explicit start and shutdown order. A supervisor watches every task; any uncaught exception writes `./HALT` with the task name before the orchestrator exits, so the next boot starts in a safe state.
+
+```python
+# src/orchestrator.py
+async def run():
+    async with asyncio.TaskGroup() as tg:
+        # ── Boot sequence (each step fails fast → HALT) ──
+        check_halt_file_and_exit_if_present()
+        await run_alembic_migrations()
+        await reconcile_on_boot()                    # §4.7
+        await assert_feature_drift_within_window()   # §6.2
+        await ping_ollama_or_mark_llm_disabled()
+
+        # ── Start tasks in dependency order ──
+        client = OllamaClient()
+        broker = build_broker(config.mode)           # Paper / Replay / Live
+        consumer = tg.create_task(
+            event_consumer(broker),                  # before scheduler
+            name="event-consumer",
+        )
+        scheduler = tg.create_task(
+            run_apscheduler(),                       # hourly macro
+            name="scheduler",
+        )
+        telegram = tg.create_task(
+            run_telegram_bot(client),
+            name="telegram",
+        )
+        heartbeat = tg.create_task(
+            heartbeat_loop(),
+            name="heartbeat",
+        )
+        await telegram_send("Online ✅")
+
+# Supervisor: any task exception → HALT + re-raise to exit TaskGroup
+```
+
+**Shutdown** on SIGTERM: `scheduler` stops queueing new jobs → `telegram` stops polling → `consumer` drains pending events (10 s timeout) → `heartbeat` writes final row → TaskGroup exits. No "kill -9 and pray" path.
+
+**Crash recovery**: on the next boot, the reconciler sees any orphan state (pending orders, open positions with no corresponding fills); `PaperAutoRepair` or `LiveConfirmViaTelegram` handles per-mode (§4.7).
+
+### 4.9 `TickRecorder` (fuel for ReplayBroker)
+
+```python
+# src/execution/tick_recorder.py
+class TickRecorder:
+    """Runs in all modes from Day 1. Records Binance WS ticks to
+    daily JSONL files at data/ticks/<symbol>/<date>.jsonl.
+    ReplayBroker consumes the same format."""
+    async def record(self, symbol: str): ...
+```
+
+Rationale: without a recording pipeline, `ReplayBroker` has no fixtures when the pre-live gate is reached. Recording starts on Day 1 so by the time live mode is considered, weeks/months of real market data are available for E2E replay. Storage ~100 MB/month/symbol at 1-minute tick aggregation.
 
 ## 5. Data Flows
 
@@ -364,11 +500,17 @@ User question with no new analysis trigger (e.g., "What's my PnL this week?").
 
 ### 5.5 HALT / Kill-Switch
 
-Triggers: manual `touch ./HALT` · Telegram `/halt` · `DailyLossKillSwitch` · `FeatureDriftMonitor` · heartbeat stale > 5 min.
+Triggers: manual `touch ./HALT` · Telegram `/halt` · `DailyLossKillSwitch` · `FeatureDriftMonitor` · heartbeat stale > 5 min (written by the **external** monitor — see §6.3; the main process cannot detect its own wedge).
 
-Effects: `HaltFileGate` rejects new orders; scheduler stops new `scheduled_macro`; event consumer continues so existing positions can be closed; Telegram alert with reason.
+Effects: `HaltFileGate` rejects new orders; scheduler stops new `scheduled_macro`; event consumer continues so existing positions can be closed; Telegram alert with reason. Every activation appends one row to `halt_events` (trigger source, timestamp, reason, resume timestamp).
 
-Recovery: `/resume` (Telegram) or remove `./HALT` file plus `/resume` confirmation. Pre-live gate (§10) requires the HALT mechanism to have fired at least once in paper mode.
+**Recovery — single canonical path**: `/resume` via Telegram only.
+
+1. Operator sends `/resume`.
+2. Orchestrator re-evaluates every HALT trigger (drift, heartbeat, daily loss, reconciliation). **If any is still breached, `/resume` is refused with the specific reason.** This prevents "click resume, immediately re-HALT" loops.
+3. On success, `./HALT` is removed, `halt_events.resumed_at` is stamped, Telegram confirms "Resumed ✅".
+
+Manual file removal alone does **not** resume; the orchestrator re-creates `./HALT` on next tick if a trigger is still breached. Pre-live gate (§10) requires the HALT mechanism to have fired and successfully resumed at least once in paper mode.
 
 ## 6. Error Handling
 
@@ -393,13 +535,21 @@ Recovery: `/resume` (Telegram) or remove `./HALT` file plus `/resume` confirmati
 | Interface | Telegram throttled / offline | buffered queue, resend; unknown free text → graceful "I'm not sure" |
 | Cross | SQLite lock / disk full / deadlock | predictive alert; every task has timeout; deadlock watchdog |
 
+### 6.3 External Heartbeat Monitor
+
+The main orchestrator cannot reliably detect its own wedge (deadlocked event loop, asyncio starvation, SQLite lock held by self). A separate process must observe liveness.
+
+- **Implementation**: a small script (`scripts/heartbeat_watchdog.py`) launched by `launchd` (macOS) or cron every minute. Reads the latest `heartbeat` row in SQLite; if `now() - last_mark > 5 min`, writes `./HALT` with `reason="heartbeat_stale"` and sends a Telegram alert directly (bypassing the main process).
+- **Independence**: the watchdog uses its own Telegram bot token env var (can share the same bot) and opens SQLite in read-only mode; it shares no asyncio loop with the orchestrator.
+- **Pre-live gate**: watchdog must have been running continuously for 7 days before live mode (§10).
+
 ## 7. Key Design Decisions (synthesized from both reviewers)
 
 ### 7.1 LLM Never Writes Order Numbers
 
 LLM is split at **contract** level (not instance — same Ollama process is fine):
 
-- **`LLMContextProvider` / `LLMContextProvider`** — outputs `LLMContextFlags(context_veto: bool, veto_reason: str|None, structural_flags: list[str])`. **Does not output `prob_up`.** Gemma's numeric probability is uncalibrated linguistic style; feeding it into a calibrated pipeline injects noise.
+- **`LLMContextProvider`** (impl: `GemmaContextProvider`) — outputs `LLMContextFlags(context_veto: bool, veto_reason: str|None, structural_flags: list[str])`. **Does not output `prob_up`.** Gemma's numeric probability is uncalibrated linguistic style; feeding it into a calibrated pipeline injects noise.
 - **`ChatLLM`** — streaming, READ_ONLY_TOOLS, user-facing. Reads `TradeProposal` to explain; never originates one.
 
 `Ensemble` (implements `Predictor`) sees `ml_pred` and `flags`, returns a single `PredictionBundle`. `Policy` is predictor-agnostic.
@@ -445,11 +595,13 @@ One event loop. apscheduler AsyncIOScheduler for 1h macro. Telegram polling task
 
 ### 8.1 SQLite (structured, Alembic-migrated from Day 1)
 
+Alembic uses `render_as_batch=True` (SQLite `ALTER TABLE` limitations require batch mode for column changes). A baseline migration ships as the **second** migration step (§13) so schema history starts with the real design, not an empty autogenerate.
+
 Tables (append-only unless noted):
 
-- `proposals` — every proposal, pass or reject, with feature snapshot + bundle.
-- `broker_events` — source of truth for positions.
-- `positions` — derived snapshot (rebuildable).
+- `proposals` — every proposal, pass or reject, with feature snapshot + bundle. Columns include `feature_registry_version`, `ml_model_version`, `llm_prompt_version` (copied from `PredictionBundle`) to make audits unambiguous across revisions.
+- `broker_events` — source of truth for positions. `event_id` is `UNIQUE NOT NULL` (idempotency key, §8.3). Columns include `ml_model_version` and `llm_prompt_version` of the originating proposal for cross-referencing.
+- `positions` — derived snapshot (rebuildable from `broker_events`).
 - `fills` — derived from broker_events for convenience.
 - `prediction_disagreements` — for post-hoc ensemble tuning.
 - `reconciliation_diffs` — every startup reconcile outcome.
@@ -459,12 +611,39 @@ Tables (append-only unless noted):
 - `log` — structlog sink; `trace_id`-indexed.
 - `backtest_runs` — walk-forward results, Deflated Sharpe, cost model version.
 - `session_state` — consecutive wins, day PnL for SizingPipeline.
+- **`dead_letter`** — orders / events that failed handling after retries; includes raw payload + failure reason + first-seen ts. Nothing is silently dropped.
+- **`model_versions`** — every ML model bundle registered at startup: `ml_model_version` (sha256 of weights), path, training window, calibration method, deployed ts. Joined against `proposals.ml_model_version` for ex-post analysis.
+- **`feature_cache_manifest`** — one row per Parquet file written under `data/feature_cache/`: `(symbol, timeframe, feature_name, feature_version, as_of_range, path, row_count)`. Lets cache invalidation be a SQL query, not a filesystem walk.
 
 ### 8.2 Parquet (heavy data, Day 1)
 
 - Candles per symbol × timeframe.
-- Feature cache per (symbol, timeframe, feature, as_of).
+- Feature cache per (symbol, timeframe, feature, as_of). Manifest lives in SQLite (`feature_cache_manifest`).
 - Training dataset snapshots (keyed by model version).
+
+### 8.3 Idempotency & Replay Contract
+
+Every consumer of `broker_events` MUST be idempotent on `event_id`. This is not a convention — it is the contract that makes crash-recovery and replay safe.
+
+```python
+# src/execution/replay.py
+def rebuild_positions(events: Iterable[BrokerEvent]) -> PositionsSnapshot:
+    """Pure function: deterministic snapshot from event stream.
+    Given the same event sequence, always returns the same snapshot.
+    Ships with a Day-1 unit test that verifies:
+      1. Idempotency: rebuild(events) == rebuild(events + duplicates_of(events))
+      2. Order-independence where semantically valid (fills in different
+         event_id order for disjoint orders must produce the same snapshot).
+      3. Replay parity: the snapshot after replaying persisted events
+         equals the snapshot held in memory at shutdown.
+    """
+```
+
+Consequences:
+
+- `positions` table is a **cache**; the source of truth is `broker_events`. A boot step verifies `positions == rebuild_positions(all_events)` — mismatch triggers reconciliation, not silent correction.
+- Event handlers use `INSERT OR IGNORE` keyed on `(event_id)` so re-processing the same event is a no-op.
+- `ReplayBroker` tests use this function as the oracle: replay a recorded fixture, assert snapshot equality.
 
 ## 9. Testing Strategy
 
@@ -477,23 +656,49 @@ Tables (append-only unless noted):
 ### 9.2 No-Repainting Test (mandatory per Feature)
 
 ```python
+# tests/helpers/feature_equality.py
+def features_equal(a: dict, b: dict, *, rel_tol=1e-9, abs_tol=1e-12) -> bool:
+    """Recursive feature-dict comparator. Raw `==` is flaky on floats
+    (e.g., EMA order-of-operations differences in a truncated slice).
+    Uses math.isclose for floats, NaN-equals-NaN semantics, and strict
+    structure equality everywhere else."""
+    ...
+
 @pytest.mark.parametrize("feature_cls", ALL_FEATURES)
-def test_no_repainting(feature_cls, eth_1h_df):
+@pytest.mark.parametrize("seed", [0, 1, 2])   # multiple seeds, not one
+def test_no_repainting(feature_cls, eth_1h_df, seed):
+    rng = random.Random(seed)
     feature = feature_cls()
-    for ts in random.sample(list(eth_1h_df.index), 50):
+    for ts in rng.sample(list(eth_1h_df.index), 50):
         truncated = eth_1h_df[eth_1h_df.index <= ts]
-        assert feature.compute(eth_1h_df, as_of=ts) == \
-               feature.compute(truncated, as_of=ts)
+        assert features_equal(
+            feature.compute(eth_1h_df, as_of=ts),
+            feature.compute(truncated, as_of=ts),
+        )
 ```
 
-Until this is green for all features, walk-forward backtest results are not trustworthy.
+Until this is green for all features (all seeds), walk-forward backtest results are not trustworthy. The recursive comparator lives in `tests/helpers/` and is the only approved way to compare feature dicts in tests.
 
 ### 9.3 LLM Testing
 
 1. **Snapshot prompt + schema, not output.** Prompt drift is visible; output drift is expected.
-2. **Schema validation via `instructor` + Pydantic** — every LLM boundary is a typed contract.
+2. **Schema validation via `instructor` + Pydantic** — every LLM boundary is a typed contract. `instructor.patch(mode=Mode.JSON)` is pinned (tool-calling mode is unreliable on Gemma — see §4.3).
 3. **vcrpy-style record/replay** of Ollama responses — fixtures live in `tests/fixtures/ollama/`, go through version control. CI never touches real Ollama.
 4. **ChatLLM boundary test** — assert `READ_ONLY_TOOLS` does not expose any order-producing method (regression guard against future mis-registration).
+5. **Prompt-version hash check** (CI-enforced):
+
+   ```python
+   # tests/contracts/test_prompt_versioning.py
+   @pytest.mark.parametrize("provider", [GemmaContextProvider, ChatLLM])
+   def test_prompt_version_matches_file_hash(provider):
+       expected = sha256(Path(provider.PROMPT_PATH).read_bytes()).hexdigest()
+       assert provider.prompt_version == expected, (
+           f"Prompt file changed but code-side prompt_version constant "
+           f"was not bumped. Update {provider.__name__}.prompt_version."
+       )
+   ```
+
+   This catches the "prompt edited, versions silently identical" failure mode that breaks replay fixtures and audit joins on `proposals.llm_prompt_version`.
 
 ### 9.4 Contract Tests
 
@@ -525,11 +730,23 @@ One abstract `XxxContract` class per Protocol. Each implementation subclasses an
 
 ## 10. Pre-Live Gate
 
-Mode can be flipped from paper to live only when all three gates are green. Enforcement is code-level: `src/execution/pre_live_gate.py` runs at startup in live mode and refuses to proceed otherwise.
+Mode can be flipped from paper to live only when **all** gates below are green. Enforcement is code-level: `src/execution/pre_live_gate.py` runs at startup in live mode and refuses to proceed otherwise. Each gate is a single boolean function against SQLite / filesystem state — no human-edited checklist.
 
-1. ✅ **All features pass `test_no_repainting`**.
-2. ✅ **Walk-forward OOS Deflated Sharpe > 0.5** with realistic cost model (PaperBroker parity).
-3. ✅ **HALT fire-drill has fired at least once in paper** (recorded in `halt_events` table via E2E scenario #2).
+### 10.1 Correctness gates
+
+1. ✅ **All features pass `test_no_repainting`** (all seeds).
+2. ✅ **Walk-forward OOS Deflated Sharpe > 0.5** with realistic cost model (PaperBroker parity, latest `backtest_runs` row).
+3. ✅ **Calibration gate** — XGBoost `prob_up` reliability diagram error (Brier score) below threshold on the OOS holdout. Calibration method (isotonic vs Platt) chosen and recorded in `model_versions`. **This promotes §14 open-question Q1 into a blocker.**
+
+### 10.2 Operations gates
+
+4. ✅ **Minimum paper runtime**: **60 consecutive days** of `heartbeat` rows with no gap > 10 min, during which **≥ 30 `TradeProposal`s have reached `broker_events.kind='filled'`** (not just proposed — actually executed end-to-end in paper).
+5. ✅ **Reconciliation stability**: zero `reconciliation_diffs` above dust threshold over the **last 14 days**.
+6. ✅ **Drift stability**: `FeatureDriftMonitor` has been green (PSI / KS below threshold) for **30 consecutive days**. **This promotes §14 open-question Q3 (specific PSI/KS thresholds) into a blocker — thresholds must be chosen before gate 6 can be evaluated.**
+7. ✅ **External heartbeat watchdog up** for 7 consecutive days (§6.3).
+8. ✅ **HALT fire-drill diversity** — `halt_events` must contain at least one row per trigger family: `daily_loss_kill_switch`, `feature_drift`, **and `broker_desync`** (the latter validates the reconciliation path end-to-end, not just loss-driven HALT). At least one of these must have been followed by a successful `/resume`.
+
+Any gate red → pre-live script exits non-zero with the specific gate name, and live mode refuses to start.
 
 ## 11. Non-Obvious Additions (from architect review)
 
@@ -545,28 +762,38 @@ Mode can be flipped from paper to live only when all three gates are green. Enfo
 
 ## 13. Migration Plan (from current codebase)
 
+0. **Pre-pivot checkpoint** — tag current `main` as `pre-pivot` (`git tag pre-pivot && git push origin pre-pivot`) before any restructuring, so the old rule-based bot is always recoverable without archaeology.
 1. **Bump Python 3.9 → 3.11**; regenerate venv; confirm 116 tests still pass.
-2. **Create `src/` skeleton** with empty layer directories and Protocols.
-3. **Move `strategy/*.py` → `src/features/`** and wrap as `Feature` implementations; keep tests green.
-4. **Add `no_repainting` test** for every migrated feature; fix any that fail (expected: SMC swing/BOS will need `as_of` clipping).
-5. **Introduce SQLite + Alembic baseline migration**.
-6. **Wire scaffolding end-to-end** — thin `BinanceKline` → one `Feature` → `XGBPredictor` stub → trivial `Policy` → `PaperBroker` → CLI log line. First working pipeline.
-7. **Telegram bot + ChatLLM** — minimal `/status` and free-text chat.
-8. **Ensemble with real XGBoost**, trained from historical features.
-9. **Add `LLMContextProvider` / `LLMContextProvider` with `instructor`**; wire into Ensemble.
-10. **Full risk pipeline + sizing pipeline**.
-11. **Five E2E scenarios green**.
-12. **Walk-forward backtest infrastructure + first Deflated Sharpe report**.
-13. **Pre-live gate module** and HALT fire-drill.
+2. **Introduce SQLite + Alembic baseline migration** — Alembic first, before any code that writes to DB. `render_as_batch=True`. The baseline migration encodes the §8.1 schema. Any later schema change is a new migration on top; no squashing of history.
+3. **Create `src/` skeleton** with empty layer directories and Protocols.
+4. **Move `strategy/*.py` → `src/features/`** and wrap as `Feature` implementations; keep existing 116 tests green.
+5. **Add `no_repainting` test** for every migrated feature (§9.2, all seeds); fix any that fail (expected: SMC swing/BOS will need `as_of` clipping).
+6. **Wire scaffolding end-to-end** — thin `BinanceKline` → one `Feature` → `XGBPredictor` stub → trivial `Policy` → `PaperBroker` → CLI log line. First working pipeline writes to the Alembic-managed schema.
+7. **`TickRecorder` live from this step onward** (§4.9) so replay fuel accumulates from the earliest possible date.
+8. **Telegram bot + ChatLLM** — minimal `/status` and free-text chat.
+9. **Ensemble with real XGBoost**, trained from historical features; calibration method chosen (§14 Q1 — blocking on the Pre-Live Gate).
+10. **Add `LLMContextProvider` (`GemmaContextProvider`) with `instructor`**; wire into Ensemble.
+11. **Full risk pipeline + sizing pipeline**.
+12. **FeatureDriftMonitor with concrete PSI/KS thresholds** (§14 Q3 — blocking on the Pre-Live Gate).
+13. **Five E2E scenarios green** (incl. broker-desync HALT).
+14. **Walk-forward backtest infrastructure + first Deflated Sharpe report**.
+15. **Pre-live gate module** (§10) and HALT fire-drill; external heartbeat watchdog deployed.
 
-Detailed implementation plan to follow via `superpowers:writing-plans`.
+Rollback at any step is `git reset --hard pre-pivot` + `alembic downgrade base`. Detailed implementation plan to follow via `superpowers:writing-plans`.
 
-## 14. Open Questions (for future revision)
+## 14. Open Questions
 
-- Which calibration method for XGBoost `prob_up` (isotonic vs Platt)?
-- ChatLLM conversation memory eviction policy when SQLite grows.
-- Specific PSI/KS thresholds for `FeatureDriftMonitor` — TBD after first backtest.
-- When `NetDirectionalCap` activates for live, what defaults are sensible for single-account crypto?
+### 14.1 Pre-implementation blockers (must resolve before Pre-Live Gate)
+
+These were previously listed as open questions; both reviewers flagged them as prerequisites for §10 gates and they are promoted here.
+
+- **Q1 · Calibration method for XGBoost `prob_up`** — isotonic vs Platt. Blocking on §10 gate 3. Decision deliverable: choose one, log in `model_versions.calibration_method`, ship matching `reliability_curve.png` artifact.
+- **Q3 · PSI / KS thresholds for `FeatureDriftMonitor`** — thresholds decide when ML is auto-disabled and when §10 gate 6 is green. Blocking: monitor cannot be evaluated until thresholds are numeric. Decision deliverable: one PSI and one KS threshold per feature family, checked into `config/drift.yaml`.
+
+### 14.2 Accepted-risk / defer with rationale
+
+- **ChatLLM conversation memory eviction policy** — no action until SQLite growth becomes a measurable problem; track `conversations` row count in weekly report.
+- **`NetDirectionalCap` defaults for live** — sensible defaults to be decided at the live-mode flip using 60+ days of paper data, not speculated now.
 
 ## 15. References
 
