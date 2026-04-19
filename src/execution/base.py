@@ -29,6 +29,7 @@ class BrokerEvent(BaseModel):
     ]
     order_id: OrderId
     ts_epoch_ms: int
+    symbol: str | None = None
     fill_price: float | None = None
     fill_qty: float | None = None
     fee: float | None = None
