@@ -6,6 +6,7 @@ event consumer + drift monitor. Graceful shutdown lands in Task 6.
 from __future__ import annotations
 
 import asyncio
+import signal
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -80,7 +81,6 @@ class Orchestrator:
         return self._stop_event is not None and self._stop_event.is_set()
 
     async def run(self) -> None:
-        import signal
         await self.boot()
         assert self.engine is not None
         assert self._scheduler is not None
@@ -151,6 +151,9 @@ class Orchestrator:
     async def _heartbeat_loop(self) -> None:
         assert self.engine is not None
         assert self._stop_event is not None
+        # TODO(spec §4.8): if this insert fails N consecutive ticks,
+        # escalate via halt.activate("heartbeat_db_failure", ...) instead
+        # of relying on the external stale-heartbeat watchdog alone.
         while not self._stop_event.is_set():
             try:
                 with self.engine.begin() as conn:
@@ -169,23 +172,41 @@ class Orchestrator:
         assert self.ctx is not None
         assert self._stop_event is not None
         events = self.ctx.broker.events()
-        while not self._stop_event.is_set():
-            event_task = asyncio.create_task(events.__anext__())
-            stop_task = asyncio.create_task(self._stop_event.wait())
-            done, pending = await asyncio.wait(
-                [event_task, stop_task], return_when=asyncio.FIRST_COMPLETED
-            )
-            for p in pending:
-                p.cancel()
-            if stop_task in done:
-                return
+        event_task: asyncio.Task[Any] | None = None
+        try:
+            while not self._stop_event.is_set():
+                event_task = asyncio.create_task(events.__anext__())
+                stop_task = asyncio.create_task(self._stop_event.wait())
+                done, pending = await asyncio.wait(
+                    [event_task, stop_task], return_when=asyncio.FIRST_COMPLETED
+                )
+                for p in pending:
+                    p.cancel()
+                if stop_task in done:
+                    return
+                try:
+                    event = event_task.result()
+                    self.ctx.event_repo.insert(event)
+                except StopAsyncIteration:
+                    return
+                except Exception:
+                    log.exception("event_persist_failed")
+                event_task = None
+        finally:
+            # Make sure any suspended __anext__() has returned before we
+            # aclose(), otherwise asyncio raises "generator is already
+            # running". Critical once real broker backends land so WS
+            # finally-blocks inside events() can close sockets.
+            if event_task is not None and not event_task.done():
+                event_task.cancel()
+                try:
+                    await event_task
+                except BaseException:  # noqa: BLE001
+                    pass
             try:
-                event = event_task.result()
-                self.ctx.event_repo.insert(event)
-            except StopAsyncIteration:
-                return
+                await events.aclose()
             except Exception:
-                log.exception("event_persist_failed")
+                log.exception("event_consumer_aclose_failed")
 
     async def _drift_monitor_loop(self) -> None:
         """Every N minutes, check current feature distribution vs reference."""
@@ -194,7 +215,7 @@ class Orchestrator:
         state = self._lifecycle["drift_state"]
         monitor = self._lifecycle["drift_monitor"]
         interval_s = self.cfg.drift_check_interval_minutes * 60
-        while not self._stop_event.is_set():
+        while True:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval_s)
                 return  # stop was set
@@ -218,8 +239,16 @@ class Orchestrator:
         """Keep Telegram running under the TaskGroup."""
         assert self._telegram is not None
         assert self._stop_event is not None
+        started = False
         try:
             await self._telegram.start()
+            started = True
             await self._stop_event.wait()
         finally:
-            await self._telegram.stop()
+            # Only attempt stop() if start() completed — otherwise we'd
+            # drive a half-initialized Application and mask the real cause.
+            if started:
+                try:
+                    await self._telegram.stop()
+                except Exception:
+                    log.exception("telegram_stop_failed")
