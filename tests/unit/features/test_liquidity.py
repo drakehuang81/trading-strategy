@@ -110,7 +110,6 @@ class TestCheckLiquiditySweep:
 import pytest
 
 from features.liquidity import LiquidityFeature
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401
 from tests.helpers.no_repainting import assert_no_repainting
 
 

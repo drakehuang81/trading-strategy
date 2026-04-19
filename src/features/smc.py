@@ -493,7 +493,7 @@ def get_nearest_poi(
 # ──────────────────────────────────────────────────────────────────
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 

@@ -245,7 +245,6 @@ class TestEdgeCases:
 import pytest
 
 from features.funding_rate import FundingFeature
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401
 from tests.helpers.no_repainting import assert_no_repainting
 
 

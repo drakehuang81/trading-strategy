@@ -5,7 +5,6 @@ from features.registry import (
     build_default_registry,
     canonical_hash,
 )
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401
 
 
 def test_default_registry_has_six_features(eth_1h_df) -> None:

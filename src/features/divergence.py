@@ -133,7 +133,7 @@ def get_divergence_summary(df: pd.DataFrame) -> Dict:
 # ──────────────────────────────────────────────────────────────────
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 

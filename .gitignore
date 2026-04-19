@@ -5,9 +5,7 @@ __pycache__/
 .env
 /data/
 *.csv
+!tests/fixtures/*.csv
 *.log
 .superpowers/
 .worktrees/
-data/state.db
-data/ticks/
-data/feature_cache/

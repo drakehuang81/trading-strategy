@@ -38,13 +38,10 @@ def test_datetime_serialises() -> None:
 
 def test_version_tag_is_part_of_hash() -> None:
     """Same content, different version → different hash."""
-    from features import registry
-    original = registry.FEATURE_REGISTRY_VERSION
+    from unittest.mock import patch
+
     content = {"x": 1}
     h1 = canonical_hash(content)
-    registry.FEATURE_REGISTRY_VERSION = "9.9.9"
-    try:
+    with patch("features.registry.FEATURE_REGISTRY_VERSION", "9.9.9"):
         h2 = canonical_hash(content)
-    finally:
-        registry.FEATURE_REGISTRY_VERSION = original
     assert h1 != h2

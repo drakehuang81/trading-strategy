@@ -258,7 +258,6 @@ class TestGetNearestPoi:
 import pytest
 
 from features.smc import SMCFeature
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401 — pytest fixture
 from tests.helpers.no_repainting import assert_no_repainting
 
 

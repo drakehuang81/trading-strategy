@@ -6,6 +6,7 @@ doesn't mask repainting."""
 from __future__ import annotations
 
 import random
+from datetime import datetime
 from typing import Protocol
 
 import pandas as pd
@@ -16,7 +17,7 @@ from tests.helpers.feature_equality import features_equal
 class _Computable(Protocol):
     required_lookback: int
 
-    def compute(self, df: pd.DataFrame, as_of: pd.Timestamp) -> dict: ...
+    def compute(self, df: pd.DataFrame, as_of: datetime) -> dict: ...
 
 
 def assert_no_repainting(

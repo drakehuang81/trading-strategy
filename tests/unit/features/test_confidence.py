@@ -1,6 +1,10 @@
 """
 Unit tests for strategy/confidence.py
 """
+from datetime import datetime
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
+
 import pytest
 from features.confidence import (
     check_htf_bias,
@@ -163,20 +167,25 @@ class TestCheckAsiaRangeSweep:
 
 class TestCalculateConfidenceScore:
     def test_perfect_score(self):
-        result = calculate_confidence_score(
-            direction="LONG",
-            htf_bias="BULLISH",
-            poi={'type': 'ORDER_BLOCK'},
-            fib_analysis={'confluence': {'is_ote': True, 'is_at_fib': True}},
-            liquidity_sweep={'eql_swept': True, 'eqh_swept': False},
-            rsi=30.0,
-            macd_hist=100.0,
-            prev_macd_hist=50.0,
-            ash=100.0,
-            asl=90.0,
-            current_price=95.0
-        )
-        
+        # Pin time inside London killzone (16:00 Taipei) so AMD factor passes
+        killzone_time = datetime(2026, 4, 18, 16, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+        with patch("features.confidence.datetime") as mock_dt:
+            mock_dt.now.return_value = killzone_time
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = calculate_confidence_score(
+                direction="LONG",
+                htf_bias="BULLISH",
+                poi={'type': 'ORDER_BLOCK'},
+                fib_analysis={'confluence': {'is_ote': True, 'is_at_fib': True}},
+                liquidity_sweep={'eql_swept': True, 'eqh_swept': False},
+                rsi=30.0,
+                macd_hist=100.0,
+                prev_macd_hist=50.0,
+                ash=100.0,
+                asl=90.0,
+                current_price=95.0
+            )
+
         assert result['score'] == 8
         assert result['rating'] == 'A+'
         assert len(result['factors']) == 8
@@ -237,22 +246,26 @@ class TestGetPositionRecommendation:
 
 class TestFormatConfidenceScore:
     def test_format_output(self):
-        result = calculate_confidence_score(
-            direction="LONG",
-            htf_bias="BULLISH",
-            poi={'type': 'ORDER_BLOCK'},
-            fib_analysis={'confluence': {'is_ote': True, 'is_at_fib': True}},
-            liquidity_sweep={'eql_swept': True, 'eqh_swept': False},
-            rsi=30.0,
-            macd_hist=100.0,
-            prev_macd_hist=50.0,
-            ash=100.0,
-            asl=90.0,
-            current_price=95.0
-        )
-        
+        killzone_time = datetime(2026, 4, 18, 16, 0, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+        with patch("features.confidence.datetime") as mock_dt:
+            mock_dt.now.return_value = killzone_time
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = calculate_confidence_score(
+                direction="LONG",
+                htf_bias="BULLISH",
+                poi={'type': 'ORDER_BLOCK'},
+                fib_analysis={'confluence': {'is_ote': True, 'is_at_fib': True}},
+                liquidity_sweep={'eql_swept': True, 'eqh_swept': False},
+                rsi=30.0,
+                macd_hist=100.0,
+                prev_macd_hist=50.0,
+                ash=100.0,
+                asl=90.0,
+                current_price=95.0
+            )
+
         formatted = format_confidence_score(result)
-        
+
         assert 'Confidence Score' in formatted
         assert '8/8' in formatted
         assert '✅' in formatted
@@ -262,7 +275,6 @@ class TestFormatConfidenceScore:
 import pytest
 
 from features.confidence import ConfidenceFeature
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401
 from tests.helpers.no_repainting import assert_no_repainting
 
 

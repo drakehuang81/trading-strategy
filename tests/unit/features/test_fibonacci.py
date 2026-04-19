@@ -180,7 +180,6 @@ class TestCalculateFibFromDf:
 import pytest
 
 from features.fibonacci import FibFeature
-from tests.helpers.fixtures import eth_1h_df  # noqa: F401
 from tests.helpers.no_repainting import assert_no_repainting
 
 

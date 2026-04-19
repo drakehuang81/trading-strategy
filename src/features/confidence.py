@@ -239,9 +239,15 @@ def format_confidence_score(result: Dict) -> str:
 # ──────────────────────────────────────────────────────────────────
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 import pandas as pd
+
+
+def _safe_rsi(slice_df: pd.DataFrame) -> float:
+    """Approximate RSI with NaN-safe fallback (50.0 = neutral)."""
+    val = slice_df["close"].pct_change().rolling(14).mean().iloc[-1]
+    return float(val) * 100 if pd.notna(val) else 50.0
 
 
 @dataclass
@@ -264,7 +270,7 @@ class ConfidenceFeature:
             poi=None,
             fib_analysis={"confluence": {"is_ote": False, "is_at_fib": False}},
             liquidity_sweep={"eql_swept": False, "eqh_swept": False},
-            rsi=float(slice_df["close"].pct_change().rolling(14).mean().iloc[-1] or 0.5) * 100,
+            rsi=_safe_rsi(slice_df),
             macd_hist=0.0,
             prev_macd_hist=0.0,
             ash=None,
