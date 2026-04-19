@@ -1,7 +1,9 @@
 """Orchestrator wiring tests — verify TaskGroup lifecycle."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 import sqlalchemy as sa
@@ -17,7 +19,6 @@ def test_boot_creates_db(tmp_path: Path):
         sqlite_path=str(db),
         halt_file=str(tmp_path / "HALT"),
     ))
-    import asyncio
     asyncio.run(orch.boot())
     assert db.exists()
     assert orch.engine is not None
@@ -31,7 +32,6 @@ def test_boot_aborts_on_halt_file(tmp_path: Path):
         halt_file=str(halt),
     ))
     with pytest.raises(SystemExit):
-        import asyncio
         asyncio.run(orch.boot())
 
 
@@ -47,15 +47,9 @@ async def test_boot_scheduler_present(tmp_path: Path):
     assert orch._scheduler is not None
 
 
-import asyncio
-from unittest.mock import AsyncMock
-
-
 @pytest.mark.asyncio
 async def test_run_uses_scan_context(tmp_path: Path, monkeypatch):
     """boot() populates self.ctx; _scheduled_scan delegates to scheduled_macro_scan."""
-    from orchestrator import Orchestrator, OrchestratorConfig
-
     drift_yaml = tmp_path / "drift.yaml"
     drift_yaml.write_text(
         "reference_window: 100\ntest_window: 10\npsi_bins: 5\n"

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -98,7 +98,7 @@ class Orchestrator:
                 broker=self.ctx.broker,
                 engine=self.engine,
             )
-            self.ctx = ScanContext(**{**self.ctx.__dict__, "telegram": self._telegram})
+            self.ctx = replace(self.ctx, telegram=self._telegram)
 
         try:
             async with asyncio.TaskGroup() as tg:
@@ -154,6 +154,9 @@ class Orchestrator:
             try:
                 if not monitor.reference:
                     continue  # Plan 5 populates reference from scan snapshots
+                # TODO(plan-5): build `test` from the rolling feature buffer.
+                # Until then, `has_breach` is intentionally skipped so the
+                # loop cannot raise a halt from empty data.
                 test: dict[str, np.ndarray] = {}
                 breached = monitor.has_breach(test) if test else False
                 state["breached"] = breached
