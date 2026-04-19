@@ -29,6 +29,15 @@ class OrchestratorConfig:
     scan_interval_hours: int = 1
     watchlist: list[str] = field(default_factory=lambda: ["ETHUSDT"])
     notify_chat_id: str = ""
+    # Plan 4 Task 4 additions — consumed by src/wiring.build_scan_context
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "gemma2:4b"
+    long_threshold: float = 0.58
+    short_threshold: float = 0.58
+    drift_yaml: str = "config/drift.yaml"
+    daily_loss_max_r: float = -2.0
+    heartbeat_max_stale_seconds: int = 300
+    paper_broker_seed: int = 42
 
 
 class Orchestrator:
