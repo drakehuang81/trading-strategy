@@ -51,6 +51,7 @@ class Orchestrator:
         self.ctx: ScanContext | None = None
         self._lifecycle: dict[str, Any] = {}
         self._telegram: Any = None
+        self._stop_event: asyncio.Event | None = None
 
     async def boot(self) -> None:
         if Path(self.cfg.halt_file).exists():
@@ -70,11 +71,28 @@ class Orchestrator:
         log.info("boot_complete", sqlite=self.cfg.sqlite_path,
                  symbols=self.ctx.symbols)
 
+    def request_stop(self) -> None:
+        """Idempotent stop request; sets internal asyncio.Event."""
+        if self._stop_event is not None:
+            self._stop_event.set()
+
+    def is_stopping(self) -> bool:
+        return self._stop_event is not None and self._stop_event.is_set()
+
     async def run(self) -> None:
+        import signal
         await self.boot()
         assert self.engine is not None
         assert self._scheduler is not None
         assert self.ctx is not None
+
+        self._stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(sig, self.request_stop)
+            except NotImplementedError:
+                pass  # Windows / restricted envs
 
         # Start OllamaClient scheduler — chat()/complete() block on its PriorityQueue drain.
         await self._lifecycle["ollama_client"].start()
@@ -107,9 +125,14 @@ class Orchestrator:
                 tg.create_task(self._drift_monitor_loop(), name="drift_monitor")
                 if self._telegram is not None:
                     tg.create_task(self._telegram_loop(), name="telegram")
+                await self._stop_event.wait()  # main blocks here; signal sets it
+                raise asyncio.CancelledError()  # unwind TaskGroup
+        except* asyncio.CancelledError:
+            pass
         finally:
             self._scheduler.shutdown(wait=False)
             await self._lifecycle["ollama_client"].stop()
+            log.info("orchestrator_stopped")
 
     async def _scheduled_scan(self) -> None:
         """APScheduler callback — delegate to pipeline."""
@@ -127,30 +150,56 @@ class Orchestrator:
 
     async def _heartbeat_loop(self) -> None:
         assert self.engine is not None
-        while True:
-            with self.engine.begin() as conn:
-                conn.execute(sa.text(
-                    "INSERT INTO heartbeat (ts, trace_id) VALUES (:ts, :tid)"
-                ), {"ts": datetime.now(tz=timezone.utc).isoformat(), "tid": "heartbeat"})
-            await asyncio.sleep(60)
+        assert self._stop_event is not None
+        while not self._stop_event.is_set():
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(sa.text(
+                        "INSERT INTO heartbeat (ts, trace_id) VALUES (:ts, :tid)"
+                    ), {"ts": datetime.now(tz=timezone.utc).isoformat(), "tid": "heartbeat"})
+            except Exception:
+                log.exception("heartbeat_insert_failed")
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                continue
 
     async def _event_consumer_loop(self) -> None:
         """Drain broker events → BrokerEventRepo."""
         assert self.ctx is not None
-        async for event in self.ctx.broker.events():
+        assert self._stop_event is not None
+        events = self.ctx.broker.events()
+        while not self._stop_event.is_set():
+            event_task = asyncio.create_task(events.__anext__())
+            stop_task = asyncio.create_task(self._stop_event.wait())
+            done, pending = await asyncio.wait(
+                [event_task, stop_task], return_when=asyncio.FIRST_COMPLETED
+            )
+            for p in pending:
+                p.cancel()
+            if stop_task in done:
+                return
             try:
+                event = event_task.result()
                 self.ctx.event_repo.insert(event)
+            except StopAsyncIteration:
+                return
             except Exception:
-                log.exception("event_persist_failed", event_kind=event.kind)
+                log.exception("event_persist_failed")
 
     async def _drift_monitor_loop(self) -> None:
         """Every N minutes, check current feature distribution vs reference."""
         assert self.ctx is not None
+        assert self._stop_event is not None
         state = self._lifecycle["drift_state"]
         monitor = self._lifecycle["drift_monitor"]
         interval_s = self.cfg.drift_check_interval_minutes * 60
-        while True:
-            await asyncio.sleep(interval_s)
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=interval_s)
+                return  # stop was set
+            except asyncio.TimeoutError:
+                pass  # woke up for periodic check
             try:
                 if not monitor.reference:
                     continue  # Plan 5 populates reference from scan snapshots
@@ -168,9 +217,9 @@ class Orchestrator:
     async def _telegram_loop(self) -> None:
         """Keep Telegram running under the TaskGroup."""
         assert self._telegram is not None
+        assert self._stop_event is not None
         try:
             await self._telegram.start()
-            while True:
-                await asyncio.sleep(3600)
+            await self._stop_event.wait()
         finally:
             await self._telegram.stop()
