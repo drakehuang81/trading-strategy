@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
