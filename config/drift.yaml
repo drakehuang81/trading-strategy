@@ -1,0 +1,10 @@
+# Feature drift thresholds — spec §9.5 scenario 5, Q3 decision.
+# PSI > 0.25 = "significant drift" (standard industry threshold).
+# KS > 0.10 = significant distributional shift.
+reference_window: 1000  # bars for reference distribution
+test_window: 100        # bars for recent/test distribution
+psi_bins: 10            # PSI histogram bins
+
+default:
+  psi_threshold: 0.25
+  ks_threshold: 0.10
