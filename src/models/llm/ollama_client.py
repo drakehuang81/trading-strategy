@@ -95,7 +95,7 @@ class OllamaClient:
 
     async def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         priority: Priority = Priority.CHAT,
         tools: list[dict[str, Any]] | None = None,
     ) -> ollama.ChatResponse:
