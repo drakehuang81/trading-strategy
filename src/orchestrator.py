@@ -1,6 +1,8 @@
 """Orchestrator — spec §4.8. Single asyncio TaskGroup main.
 
-Plan-3: full wiring — APScheduler + Telegram + event consumer + OllamaClient.
+Plan-3: skeleton only — APScheduler + heartbeat + event-consumer loops boot.
+Full ScanContext assembly (HaltManager, TelegramBot, OllamaClient, ChatLLM,
+Ensemble, Broker) is deferred to Plan 4. `_scheduled_scan` is a no-op stub.
 """
 from __future__ import annotations
 

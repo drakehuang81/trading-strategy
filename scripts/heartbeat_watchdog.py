@@ -16,6 +16,12 @@ from pathlib import Path
 import sqlalchemy as sa
 
 
+def _write_halt_if_absent(halt_file: Path, reason: str) -> None:
+    """Only write HALT if file does not exist. Preserves any prior reason."""
+    if not halt_file.exists():
+        halt_file.write_text(reason)
+
+
 def check_heartbeat_staleness(
     engine: sa.Engine,
     halt_file: Path,
@@ -28,7 +34,7 @@ def check_heartbeat_staleness(
         )).first()
 
     if row is None:
-        halt_file.write_text("heartbeat_stale: no heartbeat rows found\n")
+        _write_halt_if_absent(halt_file, "heartbeat_stale: no heartbeat rows found\n")
         return True
 
     last_ts_str = str(row[0])
@@ -40,9 +46,10 @@ def check_heartbeat_staleness(
     age = now - last_ts
 
     if age > timedelta(minutes=max_stale_minutes):
-        halt_file.write_text(
+        _write_halt_if_absent(
+            halt_file,
             f"heartbeat_stale: last heartbeat {age.total_seconds():.0f}s ago "
-            f"(threshold: {max_stale_minutes * 60}s)\n"
+            f"(threshold: {max_stale_minutes * 60}s)\n",
         )
         return True
 

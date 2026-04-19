@@ -8,7 +8,9 @@
 
 ## Summary
 
-All 12 tasks complete. Paper-mode trading assistant end-to-end: OllamaClient priority queue, ChatLLM with read-only tools, Telegram bot, scan pipeline, APScheduler orchestrator, heartbeat watchdog, reconciliation, drift monitor, HALT manager, and four E2E scenario tests.
+All 12 tasks complete. Paper-mode **components** delivered individually and covered by unit + E2E tests: OllamaClient priority queue, ChatLLM with read-only tools, Telegram bot, scan pipeline, APScheduler orchestrator skeleton, heartbeat watchdog, reconciliation, drift monitor, HALT manager, four E2E scenarios.
+
+**Integration gap (flagged by final review, deferred to Plan 4):** `Orchestrator.run()` only schedules a no-op `_scheduled_scan` and placeholder loops. It does NOT instantiate `HaltManager` / `TelegramBot` / `OllamaClient` / `ChatLLM` / `Ensemble` / `PaperBroker` / `ScanContext`. E2E tests wire the stack by hand. Running `python -m src.cli` today does migrations + heartbeat only; it does not trade, scan, or serve Telegram. Plan 4 task 1 must build the `ScanContext` factory and wire lifecycle inside `Orchestrator.boot/run`.
 
 Test count: **229 passed** (excluding 2 pre-existing `libomp`/xgboost environment failures unrelated to Plan 3).
 
@@ -67,18 +69,26 @@ Test count: **229 passed** (excluding 2 pre-existing `libomp`/xgboost environmen
 - Full ScanContext dependency injection in `Orchestrator.run()` — `_scheduled_scan` is currently a stub
 - `_event_consumer_loop` — currently a placeholder; will consume broker events in Plan 4
 
-## Known issues / follow-ups (non-blocking)
+## Known issues / follow-ups
 
-From review rounds:
+Fixed in final review pass (commit `HEAD`):
 
-- **Task 5**: `message_repo.history()` orders by `ts` with microsecond resolution — could be non-deterministic on collisions. Secondary sort key (seq INTEGER) deferred.
-- **Task 6**: No handler-level tests (only `parse_analyze_command`). `send_message()` untested but consumed by Task 8.
+- ✅ **Task 8**: Empty-df guard added in `_scan_symbol` step 1
+- ✅ **Task 8**: Dropped `hasattr(ctx.broker, 'positions'/'balance')` guards — `Broker` Protocol guarantees both
+- ✅ **Task 10**: Watchdog now uses write-if-absent so user's `/halt` reason is not clobbered
+- ✅ **Orchestrator docstring**: honest about skeleton-only status
+
+Still open (Plan 4 scope):
+
+- **Orchestrator full wiring** — biggest gap, tracked above under Summary integration-gap note. Plan 4 task 1.
+- **Heartbeat → HaltManager trigger**: watchdog writes HALT externally, but HaltManager's `attempt_resume()` has no `HeartbeatTrigger` in its trigger list (the list is empty today). So `/resume` unconditionally unlinks HALT even if heartbeat is still stale. Wire a HeartbeatTrigger when ScanContext is built.
+- **Task 5**: `message_repo.history()` orders by `ts` microsecond — add `seq INTEGER` secondary sort key before live.
+- **Task 6**: No handler-level tests (only `parse_analyze_command`).
 - **Task 7**: Sign-flip (long↔short) not flagged differently from qty delta. Live mode should enrich.
-- **Task 8**: `hasattr(ctx.broker, 'positions')` / `balance` guards are dead code against typed Broker Protocol — simplifiable.
-- **Task 8**: Empty-df guard missing in `_scan_symbol` step 1 — `df.index[-1]` will raise.
 - **Task 9**: `run()` has no graceful-shutdown path; TaskGroup tasks loop forever. Spec §4.8 SIGTERM handling deferred.
 - **Task 9**: `_scheduled_scan` and `_event_consumer_loop` are silent stubs — should emit startup log lines.
-- **Task 10**: Watchdog `write_text` overwrites existing HALT reasons. Guarded-write (`if not exists`) recommended.
 - **Task 10**: Engine not opened read-only (docstring claims RO).
-
-None are production blockers for paper mode. All captured for the pre-Live hardening pass.
+- **`config/drift.yaml`** is orphaned — no production path loads it yet; wire when FeatureDriftMonitor is instantiated in orchestrator.
+- **`tool_executor.execute` for `get_feature_snapshot`** returns hardcoded `not_implemented` JSON; advertised to LLM. Fill in when FeatureRegistry is wired into `ScanContext`.
+- **ChatLLM rationale silent-fail** (`pipeline.py:137-138`) — add `reason="llm_timeout"` field for ops.
+- **`ConversationRepo` imported inside `_free_text`** — move to module level.

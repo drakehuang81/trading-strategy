@@ -87,8 +87,11 @@ async def test_scan_runs_full_pipeline(tmp_path: Path):
     sizer = MagicMock()
     sizer.size.return_value = 0.5
 
+    from execution.base import Balance
     broker = AsyncMock()
     broker.submit = AsyncMock(return_value="order-1")
+    broker.positions = AsyncMock(return_value=[])
+    broker.balance = AsyncMock(return_value=Balance(equity_usdt=10_000, free_usdt=10_000))
 
     from execution.repositories import BrokerEventRepo, ProposalRepo, SessionStateRepo
     proposal_repo = ProposalRepo(engine)

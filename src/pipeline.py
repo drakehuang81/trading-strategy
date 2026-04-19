@@ -84,6 +84,9 @@ async def _scan_symbol(
     """Core scan logic for one symbol."""
     # 1. Fetch klines
     df = await ctx.data_source.fetch_latest(symbol, timeframe, n)
+    if df.empty:
+        log.warning("empty_klines", symbol=symbol, timeframe=timeframe, trace_id=trace_id)
+        return None
     as_of = df.index[-1]
 
     # 2. Compute features
@@ -95,9 +98,10 @@ async def _scan_symbol(
     # 4. Build portfolio snapshot
     today = datetime.now(tz=timezone.utc).date().isoformat()
     consecutive_wins, day_pnl_r = ctx.session_repo.get(today)
-    positions = await ctx.broker.positions() if hasattr(ctx.broker, 'positions') else []
+    positions = await ctx.broker.positions()
+    balance = await ctx.broker.balance()
     portfolio = PortfolioSnapshot(
-        equity_usdt=(await ctx.broker.balance()).equity_usdt if hasattr(ctx.broker, 'balance') else 10_000,
+        equity_usdt=balance.equity_usdt,
         open_positions={p.symbol: p.qty for p in positions},
         day_pnl_r=day_pnl_r,
         consecutive_wins=consecutive_wins,

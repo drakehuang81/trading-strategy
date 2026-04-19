@@ -56,3 +56,15 @@ def test_no_heartbeat_rows_creates_halt(tmp_path: Path):
     is_stale = check_heartbeat_staleness(engine, halt_file, max_stale_minutes=5)
     assert is_stale
     assert halt_file.exists()
+
+
+def test_existing_halt_not_clobbered(tmp_path: Path):
+    """If HALT is already present (user /halt), watchdog must not overwrite the reason."""
+    from scripts.heartbeat_watchdog import check_heartbeat_staleness
+    engine = _make_engine(tmp_path)
+    halt_file = tmp_path / "HALT"
+    halt_file.write_text("user: manual halt via /halt\n")
+
+    is_stale = check_heartbeat_staleness(engine, halt_file, max_stale_minutes=5)
+    assert is_stale  # stale (no rows) still reported
+    assert "manual halt" in halt_file.read_text()  # original reason preserved
