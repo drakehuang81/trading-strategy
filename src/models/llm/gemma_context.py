@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from models.base import LLMContextFlags
-from models.llm.ollama_client import OllamaClient
+from models.llm.ollama_client import OllamaClient, Priority
 
 
 PROMPT_PATH = Path("config/prompts/context_provider.md")
@@ -30,6 +30,6 @@ class GemmaContextProvider:
 
     async def flags(self, features: dict[str, Any]) -> LLMContextFlags:
         prompt = f"{self._system}\n\nFeatures:\n{json.dumps(features, default=str)[:8000]}"
-        result = await self.client.complete(prompt, schema=LLMContextFlags)
+        result = await self.client.complete(prompt, schema=LLMContextFlags, priority=Priority.SCHEDULED_MACRO)
         assert isinstance(result, LLMContextFlags)
         return result
