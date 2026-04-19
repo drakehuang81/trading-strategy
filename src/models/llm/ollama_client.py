@@ -23,10 +23,11 @@ class OllamaClient:
 
     async def complete(self, prompt: str, schema: type[BaseModel], **kw: Any) -> BaseModel:
         async with self._sem:
-            return await self._client.chat.completions.create(
+            result: BaseModel = await self._client.chat.completions.create(
                 model=self._model,
                 response_model=schema,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 **kw,
             )
+            return result
