@@ -45,3 +45,36 @@ async def test_boot_scheduler_present(tmp_path: Path):
     ))
     await orch.boot()
     assert orch._scheduler is not None
+
+
+import asyncio
+from unittest.mock import AsyncMock
+
+
+@pytest.mark.asyncio
+async def test_run_uses_scan_context(tmp_path: Path, monkeypatch):
+    """boot() populates self.ctx; _scheduled_scan delegates to scheduled_macro_scan."""
+    from orchestrator import Orchestrator, OrchestratorConfig
+
+    drift_yaml = tmp_path / "drift.yaml"
+    drift_yaml.write_text(
+        "reference_window: 100\ntest_window: 10\npsi_bins: 5\n"
+        "default:\n  psi_threshold: 0.25\n  ks_threshold: 0.10\n"
+    )
+    cfg = OrchestratorConfig(
+        sqlite_path=str(tmp_path / "state.db"),
+        halt_file=str(tmp_path / "HALT"),
+        drift_yaml=str(drift_yaml),
+        telegram_token="",
+    )
+    orch = Orchestrator(cfg)
+    await orch.boot()
+    assert orch.ctx is not None
+    assert orch.ctx.symbols == ["ETHUSDT"]
+
+    fake = AsyncMock()
+    monkeypatch.setattr("orchestrator.scheduled_macro_scan", fake)
+    await orch._scheduled_scan()
+    fake.assert_called_once()
+    called_ctx = fake.call_args[0][0]
+    assert called_ctx is orch.ctx
