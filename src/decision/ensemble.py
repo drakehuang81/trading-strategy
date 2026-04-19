@@ -16,6 +16,8 @@ from models.base import LLMContextProvider, PredictionBundle, Predictor
 
 log = structlog.get_logger()
 
+LLM_UNAVAILABLE_MARKER = "llm_unavailable"
+
 
 @dataclass
 class Ensemble:
@@ -33,5 +35,5 @@ class Ensemble:
                 update["veto_reason"] = flags.veto_reason
         except Exception as exc:
             log.warning("llm_context_failed_falling_back_to_ml_only", error=str(exc))
-            update["llm_prompt_version"] = "llm_unavailable"
+            update["llm_prompt_version"] = LLM_UNAVAILABLE_MARKER
         return ml_pred.model_copy(update=update)

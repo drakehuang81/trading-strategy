@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from decision.ensemble import Ensemble
+from decision.ensemble import LLM_UNAVAILABLE_MARKER, Ensemble
 from models.base import PredictionBundle
 from models.xgb_predictor import XGBPredictor
 
@@ -36,7 +36,7 @@ async def test_ensemble_falls_back_on_llm_timeout():
     assert bundle.ml_model_version == "stub-v0"
 
     # LLM fallback marker
-    assert bundle.llm_prompt_version == "llm_unavailable"
+    assert bundle.llm_prompt_version == LLM_UNAVAILABLE_MARKER
 
     # No veto applied (LLM was unavailable)
     assert bundle.size_multiplier == 1.0
