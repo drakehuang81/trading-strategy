@@ -5,6 +5,7 @@ Cannot submit orders. Enforced by boundary contract test.
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 import sqlalchemy as sa
@@ -75,7 +76,7 @@ class ToolExecutor:
         elif name == "get_pnl_summary":
             return self._query_pnl()
         elif name == "get_feature_snapshot":
-            return json.dumps({"note": "Feature snapshot requires live data source — not cached"})
+            return json.dumps({"error": "not_implemented", "tool": "get_feature_snapshot"})
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -94,7 +95,6 @@ class ToolExecutor:
         return json.dumps(proposals)
 
     def _query_pnl(self) -> str:
-        from datetime import date
         with self._engine.connect() as conn:
             row = conn.execute(sa.text(
                 "SELECT consecutive_wins, day_pnl_r FROM session_state WHERE date = :d"

@@ -21,6 +21,8 @@ log = structlog.get_logger()
 
 CHAT_PROMPT_PATH = Path("config/prompts/chat_llm.md")
 
+_EXHAUSTED_FALLBACK = "（抱歉，無法在 5 步內完成這個請求，請重新描述。）"
+
 
 def _load_system_prompt() -> tuple[str, str]:
     body = CHAT_PROMPT_PATH.read_bytes()
@@ -66,6 +68,12 @@ class ChatLLM:
         history = self.message_repo.history(conversation_id, limit=20)
         messages.extend(history)
 
+        # Buffer tool-call audit records; they're persisted against the
+        # final assistant message_id once we've landed on a reply (I-1:
+        # no placeholder assistant rows in `messages`).
+        pending_tool_calls: list[tuple[str, dict[str, Any], str]] = []
+
+        final_text: str | None = None
         for _ in range(self.max_tool_rounds):
             response = await self.client.chat(
                 messages=messages, priority=Priority.CHAT, tools=TOOL_SCHEMAS,
@@ -73,21 +81,39 @@ class ChatLLM:
             msg = response.message
 
             if not msg.tool_calls:
-                content = msg.content or ""
-                mid = self.message_repo.append(conversation_id, "assistant", content)
-                return content
+                final_text = msg.content or ""
+                break
 
-            # Process tool calls
             messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": msg.tool_calls})
             for tc in msg.tool_calls:
                 name = tc.function.name
-                args = tc.function.arguments if isinstance(tc.function.arguments, dict) else {}
+                raw_args = tc.function.arguments
+                if isinstance(raw_args, str):
+                    try:
+                        args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        args = {}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+                else:
+                    args = {}
                 result = await self.tool_executor.execute(name, args)
-                mid = self.message_repo.append(conversation_id, "assistant", f"[tool:{name}]")
-                self.tool_call_repo.insert(mid, name, args, result)
-                messages.append({"role": "tool", "content": result})
+                pending_tool_calls.append((name, args, result))
+                tool_msg: dict[str, Any] = {
+                    "role": "tool",
+                    "content": result,
+                    "name": name,
+                }
+                tool_call_id = getattr(tc, "id", None)
+                if tool_call_id:
+                    tool_msg["tool_call_id"] = tool_call_id
+                messages.append(tool_msg)
 
-        # Exhausted tool rounds — return whatever we have
-        final = messages[-1].get("content", "") if messages else ""
-        self.message_repo.append(conversation_id, "assistant", str(final))
-        return str(final)
+        if final_text is None:
+            log.warning("chat_llm.max_rounds_exhausted", conversation_id=conversation_id)
+            final_text = _EXHAUSTED_FALLBACK
+
+        final_mid = self.message_repo.append(conversation_id, "assistant", final_text)
+        for name, args, result in pending_tool_calls:
+            self.tool_call_repo.insert(final_mid, name, args, result)
+        return final_text

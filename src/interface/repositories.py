@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -60,7 +61,7 @@ class ToolCallRepo:
     def __init__(self, engine: sa.Engine) -> None:
         self._engine = engine
 
-    def insert(self, message_id: str, name: str, args: dict, result: str) -> str:
+    def insert(self, message_id: str, name: str, args: dict[str, Any], result: str) -> str:
         tcid = str(uuid.uuid4())
         with self._engine.begin() as conn:
             conn.execute(sa.text(

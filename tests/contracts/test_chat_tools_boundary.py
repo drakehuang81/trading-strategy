@@ -5,8 +5,12 @@ from interface.tools import TOOL_NAMES
 
 
 WRITE_TOOL_PATTERNS = {
-    "submit", "cancel", "place", "execute", "order",
-    "delete", "create", "update", "modify", "halt", "resume",
+    "submit", "place", "cancel", "halt", "resume",
+    "create", "delete", "update", "modify",
+    "post", "send", "write", "set",
+    "buy", "sell", "close", "flatten", "trade",
+    "liquidate", "execute", "open",
+    "order",
 }
 
 
