@@ -38,13 +38,18 @@ class MessageRepo:
     def append(self, conversation_id: str, role: str, content: str) -> str:
         mid = str(uuid.uuid4())
         with self._engine.begin() as conn:
+            next_seq = conn.execute(sa.text(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM messages "
+                "WHERE conversation_id = :cid"
+            ), {"cid": conversation_id}).scalar()
             conn.execute(sa.text(
-                "INSERT INTO messages (message_id, conversation_id, ts, role, content) "
-                "VALUES (:mid, :cid, :ts, :role, :content)"
+                "INSERT INTO messages (message_id, conversation_id, ts, role, content, seq) "
+                "VALUES (:mid, :cid, :ts, :role, :content, :seq)"
             ), {
                 "mid": mid, "cid": conversation_id,
                 "ts": datetime.now(tz=timezone.utc),
                 "role": role, "content": content,
+                "seq": next_seq,
             })
         return mid
 
@@ -52,7 +57,8 @@ class MessageRepo:
         with self._engine.connect() as conn:
             rows = conn.execute(sa.text(
                 "SELECT role, content FROM messages "
-                "WHERE conversation_id = :cid ORDER BY ts DESC LIMIT :lim"
+                "WHERE conversation_id = :cid "
+                "ORDER BY seq DESC LIMIT :lim"
             ), {"cid": conversation_id, "lim": limit}).all()
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
 
