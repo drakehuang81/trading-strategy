@@ -37,8 +37,10 @@ class BrokerEventRepo:
         """INSERT OR IGNORE on event_id. Returns True if inserted, False if duplicate."""
         stmt = sa.text(
             "INSERT OR IGNORE INTO broker_events "
-            "(event_id, kind, order_id, ts, fill_price, fill_qty, fee, reason, ml_model_version, llm_prompt_version) "
-            "VALUES (:event_id, :kind, :order_id, :ts, :fill_price, :fill_qty, :fee, :reason, :mv, :pv)"
+            "(event_id, kind, order_id, ts, fill_price, fill_qty, fee, reason, "
+            "ml_model_version, llm_prompt_version, symbol) "
+            "VALUES (:event_id, :kind, :order_id, :ts, :fill_price, :fill_qty, "
+            ":fee, :reason, :mv, :pv, :symbol)"
         )
         with self._engine.begin() as conn:
             result = conn.execute(stmt, {
@@ -52,6 +54,7 @@ class BrokerEventRepo:
                 "reason": event.reason,
                 "mv": event.ml_model_version,
                 "pv": event.llm_prompt_version,
+                "symbol": event.symbol,
             })
             return result.rowcount == 1
 
@@ -59,7 +62,7 @@ class BrokerEventRepo:
         with self._engine.connect() as conn:
             rows = conn.execute(sa.text(
                 "SELECT event_id, kind, order_id, ts, fill_price, fill_qty, fee, reason, "
-                "ml_model_version, llm_prompt_version FROM broker_events ORDER BY ts"
+                "ml_model_version, llm_prompt_version, symbol FROM broker_events ORDER BY ts"
             )).all()
         return [
             BrokerEvent(
@@ -67,6 +70,7 @@ class BrokerEventRepo:
                 ts_epoch_ms=_parse_ts_ms(r[3]),
                 fill_price=r[4], fill_qty=r[5], fee=r[6], reason=r[7],
                 ml_model_version=r[8], llm_prompt_version=r[9],
+                symbol=r[10],
             )
             for r in rows
         ]

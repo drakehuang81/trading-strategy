@@ -107,10 +107,11 @@ async def test_smoke_pipeline_runs_end_to_end(tmp_path: Path):
         if e.kind == "filled":
             break
 
-    # rebuild from in-memory events (has symbol); repo round-trip tested in unit tests
-    snap = rebuild_positions(events)
-    assert "ETHUSDT" in snap
-
-    # verify repo persisted all events
+    # verify symbol persists through repo round-trip
     stored = event_repo.all()
     assert len(stored) == len(events)
+    assert all(e.symbol == "ETHUSDT" for e in stored)
+
+    # rebuild from repo-stored events (now has symbol)
+    snap = rebuild_positions(stored)
+    assert "ETHUSDT" in snap
