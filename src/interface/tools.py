@@ -76,7 +76,8 @@ class ToolExecutor:
         elif name == "get_pnl_summary":
             return self._query_pnl()
         elif name == "get_feature_snapshot":
-            return json.dumps({"error": "not_implemented", "tool": "get_feature_snapshot"})
+            symbol = args.get("symbol", "")
+            return self._query_feature_snapshot(symbol)
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -102,3 +103,18 @@ class ToolExecutor:
         if row:
             return json.dumps({"consecutive_wins": row[0], "day_pnl_r": row[1]})
         return json.dumps({"consecutive_wins": 0, "day_pnl_r": 0.0})
+
+    def _query_feature_snapshot(self, symbol: str) -> str:
+        with self._engine.connect() as conn:
+            row = conn.execute(sa.text(
+                "SELECT symbol, feature_snapshot_json, ts "
+                "FROM proposals WHERE symbol = :s "
+                "ORDER BY ts DESC LIMIT 1"
+            ), {"s": symbol}).first()
+        if row is None:
+            return json.dumps({"error": "no_proposal_found", "symbol": symbol})
+        return json.dumps({
+            "symbol": row[0],
+            "features": json.loads(row[1]),
+            "ts": str(row[2]),
+        })
