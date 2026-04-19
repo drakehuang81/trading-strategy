@@ -18,6 +18,17 @@ def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
+def _parse_ts_ms(val: object) -> int:
+    """Convert DB timestamp (datetime or ISO string) to epoch milliseconds."""
+    if isinstance(val, datetime):
+        return int(val.timestamp() * 1000)
+    if isinstance(val, (int, float)):
+        return int(val)
+    # SQLite returns ISO string when native datetime parsing is off
+    dt = datetime.fromisoformat(str(val))
+    return int(dt.timestamp() * 1000)
+
+
 class BrokerEventRepo:
     def __init__(self, engine: sa.Engine) -> None:
         self._engine = engine
@@ -53,7 +64,7 @@ class BrokerEventRepo:
         return [
             BrokerEvent(
                 event_id=r[0], kind=r[1], order_id=r[2],
-                ts_epoch_ms=int(r[3].timestamp() * 1000) if isinstance(r[3], datetime) else int(r[3]),
+                ts_epoch_ms=_parse_ts_ms(r[3]),
                 fill_price=r[4], fill_qty=r[5], fee=r[6], reason=r[7],
                 ml_model_version=r[8], llm_prompt_version=r[9],
             )
