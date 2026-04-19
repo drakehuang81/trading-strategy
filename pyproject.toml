@@ -8,6 +8,7 @@ asyncio_mode = "auto"
 markers = [
     "contract: cross-implementation contract tests",
     "e2e: end-to-end scenario tests",
+    "slow: slow offline tests (deselected by default, run with -m slow)",
 ]
 
 [tool.mypy]

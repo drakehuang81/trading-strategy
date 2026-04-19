@@ -9,3 +9,5 @@ __pycache__/
 *.log
 .superpowers/
 .worktrees/
+/models/
+!/models/.gitkeep
