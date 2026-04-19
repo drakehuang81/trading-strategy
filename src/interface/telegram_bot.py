@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import sqlalchemy as sa
 import structlog
 from telegram import Update
 from telegram.ext import (
@@ -101,9 +102,30 @@ class TelegramBot:
     async def _cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.effective_message:
             return
-        halted = self._halt.is_halted() if self._halt else False
-        status = "🔴 HALTED" if halted else "🟢 Running"
-        await update.effective_message.reply_text(f"Status: {status}")
+        lines: list[str] = []
+        if self._halt is not None:
+            lines.append(f"HALT: {'active' if self._halt.is_halted() else 'clear'}")
+        else:
+            lines.append("HALT: unknown (no halt_manager)")
+
+        if self._engine is not None:
+            try:
+                with self._engine.connect() as conn:
+                    row = conn.execute(sa.text(
+                        "SELECT ts FROM heartbeat ORDER BY ts DESC LIMIT 1"
+                    )).first()
+                lines.append(f"Last heartbeat: {row[0]}" if row else "Last heartbeat: none")
+            except Exception:
+                lines.append("Last heartbeat: unavailable")
+
+        if self._broker is not None:
+            try:
+                positions = await self._broker.positions()
+                lines.append(f"Open positions: {len(positions)}")
+            except Exception:
+                lines.append("Open positions: unavailable")
+
+        await update.effective_message.reply_text("\n".join(lines))
 
     async def _cmd_halt(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._halt or not update.effective_message:
