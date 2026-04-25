@@ -36,9 +36,10 @@ class XGBPredictor:
         with open(calib_path, "rb") as fh:
             meta = pickle.load(fh)
         version = Path(model_path).stem.removeprefix("xgb_")
+        calibrator = meta.get("calibrator") or meta["isotonic"]
         return cls(
             _model=booster,
-            _calibrator=meta["isotonic"],
+            _calibrator=calibrator,
             _feature_order=tuple(meta["feature_order"]),
             ml_model_version=version,
         )
