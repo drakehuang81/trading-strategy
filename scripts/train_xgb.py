@@ -113,6 +113,21 @@ def walk_forward_calibration_choice(
     return CalibrationChoice("platt", avg_iso, avg_platt, last_platt)
 
 
+def write_drift_reference(X: pd.DataFrame, out_path: Path,
+                          max_samples: int = 5000) -> None:
+    """Persists per-column samples for use as FeatureDriftMonitor reference."""
+    rng = np.random.default_rng(0)
+    blob: dict[str, list[float]] = {}
+    for col in X.columns:
+        vals = X[col].dropna().to_numpy()
+        if len(vals) > max_samples:
+            idx = rng.choice(len(vals), size=max_samples, replace=False)
+            vals = vals[idx]
+        blob[col] = [float(v) for v in vals]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(blob))
+
+
 def train_walk_forward(
     X: pd.DataFrame,
     y: pd.Series,
@@ -157,6 +172,7 @@ def train_walk_forward(
         "feature_order": meta.feature_order,
     }, indent=2))
 
+    write_drift_reference(X, out_dir / "drift_reference.json")
     return meta
 
 

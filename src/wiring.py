@@ -134,8 +134,14 @@ async def build_scan_context(
     )
 
     drift_cfg = load_drift_config(cfg.drift_yaml)
+    reference: dict[str, list[float]] = {}
+    drift_ref_path = Path(cfg.drift_reference_path)
+    if drift_ref_path.exists():
+        import json as _json
+        reference = _json.loads(drift_ref_path.read_text())
+
     drift_monitor = FeatureDriftMonitor(
-        reference={},
+        reference=reference,
         psi_threshold=drift_cfg.psi_threshold,
         ks_threshold=drift_cfg.ks_threshold,
         n_bins=drift_cfg.psi_bins,
