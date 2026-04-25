@@ -251,10 +251,13 @@ class FundingFeature:
         if not path.exists():
             return {"rate": None, "evaluation": None, "position_adj": None}
         funding = pd.read_parquet(path)
-        funding = funding[funding["ts"] <= as_of]
+        # Index is named "ts"; filter by index rather than a column.
+        funding = funding[funding.index <= as_of]
         if funding.empty:
             return {"rate": None, "evaluation": None, "position_adj": None}
-        rate = float(funding.iloc[-1]["rate"])
+        last = funding.iloc[-1]
+        rate_col = "funding_rate" if "funding_rate" in funding.columns else "rate"
+        rate = float(last[rate_col])
         evaluation = evaluate_funding_rate(rate)
         position_adj = get_position_adjustment(rate, direction="LONG")
         return {"rate": rate, "evaluation": evaluation, "position_adj": position_adj}
