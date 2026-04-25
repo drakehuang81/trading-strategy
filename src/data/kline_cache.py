@@ -14,6 +14,14 @@ import pandas as pd
 
 @dataclass
 class RollingKlineCache:
+    """In-process N-bar buffer per (symbol, timeframe) + last-known spread.
+
+    Concurrency: single-writer (Task 4's refresh loop) / multi-reader
+    (ThresholdPolicy / SpreadGate / PaperBroker). Safe under asyncio
+    because no `await` lives between mutation and read inside this class.
+    Do NOT make any method `async` without adding a lock.
+    """
+
     max_bars: int = 200
     _frames: dict[tuple[str, str], pd.DataFrame] = field(default_factory=dict)
     _spreads_bps: dict[str, float] = field(default_factory=dict)
@@ -40,6 +48,12 @@ class RollingKlineCache:
         return float(snap["close"].iloc[-1])
 
     def atr(self, symbol: str, timeframe: str, n: int = 14) -> float | None:
+        """Mean of (high - low) over the last n bars.
+
+        NOT Wilder true-range ATR; bar-to-bar gaps are ignored. Sufficient
+        for relative threshold sizing in Plan 5A; upgrade to Wilder if a
+        future feature/risk check needs gap-aware volatility.
+        """
         snap = self._frames.get((symbol, timeframe))
         if snap is None or len(snap) < n:
             return None
