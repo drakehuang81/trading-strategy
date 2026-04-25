@@ -267,6 +267,9 @@ class Orchestrator:
         """Refreshes RollingKlineCache every minute. Failures are logged
         and swallowed; cache providers fall back to last known values."""
         if self.ctx is None or "kline_cache" not in self._lifecycle:
+            log.warning("kline_refresh_skipped",
+                        ctx_set=self.ctx is not None,
+                        cache_in_lifecycle="kline_cache" in self._lifecycle)
             return
         cache = self._lifecycle["kline_cache"]
         symbol = self.ctx.symbols[0]
@@ -276,7 +279,7 @@ class Orchestrator:
                 df = await self.ctx.data_source.fetch_latest(symbol, timeframe, 200)
                 cache.ingest(symbol, timeframe, df)
             except Exception:
-                log.warning("kline_refresh_failed", symbol=symbol)
+                log.warning("kline_refresh_failed", symbol=symbol, exc_info=True)
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=60.0)  # type: ignore[arg-type]
             except asyncio.TimeoutError:

@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+import structlog
+
+log = structlog.get_logger()
 
 from data.binance_kline import BinanceKline
 from data.kline_cache import RollingKlineCache
@@ -84,7 +87,10 @@ async def build_scan_context(
     except Exception:
         # Boot must succeed even if the seed fetch fails; refresh loop will
         # try again. Keep providers in fallback mode until then.
-        pass
+        # exc_info=True preserves traceback so a bug (wrong column name,
+        # missing kwarg) is distinguishable from a network outage.
+        log.warning("kline_seed_failed",
+                    symbol=symbol, timeframe=timeframe, exc_info=True)
 
     mid_provider = cache_backed_mid_provider(cache, timeframe=timeframe, fallback=3000.0)
     atr_provider = cache_backed_atr_provider(cache, timeframe=timeframe, n=14, fallback=15.0)
