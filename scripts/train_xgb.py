@@ -24,8 +24,7 @@ import xgboost as xgb
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit
 
-from features.registry import build_default_registry
-from models.xgb_predictor import _flatten
+from features.registry import build_default_registry, flatten_features
 
 
 def _make_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
@@ -36,7 +35,7 @@ def _make_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
         if i < 200 or i > len(df) - 5:
             continue
         feats = reg.compute_all(df, as_of=ts)
-        flat = _flatten(feats)
+        flat = flatten_features(feats)
         rows.append(flat)
         y = int(df["close"].iloc[i + 4] > df["close"].iloc[i])
         ys.append(y)

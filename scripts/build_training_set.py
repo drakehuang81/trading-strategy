@@ -1,6 +1,6 @@
 """Computes flat features for every bar of a kline parquet (Plan 5A Task 6).
 
-Reuses XGBPredictor._flatten so column names match what XGBPredictor.load
+Reuses features.registry.flatten_features so column names match what XGBPredictor.load
 expects at inference time.
 
 Usage:
@@ -16,8 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from features.registry import FeatureRegistry, build_default_registry
-from models.xgb_predictor import _flatten
+from features.registry import FeatureRegistry, build_default_registry, flatten_features
 
 
 def build_training_set(
@@ -31,10 +30,13 @@ def build_training_set(
         if i < warmup_bars:
             continue
         feats = registry.compute_all(df, as_of=ts)
-        flat = _flatten(feats)
+        flat = flatten_features(feats)
         rows.append(flat)
         index.append(ts)
     out = pd.DataFrame(rows, index=pd.DatetimeIndex(index, name="as_of"))
+    # TODO(plan-5b): switch from fillna(0.0) to NaN-pass-through so XGBoost's
+    # native missing-value handling can distinguish "data unavailable" from
+    # "feature value is 0". Same TODO lives in xgb_predictor._run_model.
     return out.fillna(0.0)
 
 

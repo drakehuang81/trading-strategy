@@ -11,21 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from features.registry import canonical_hash
+from features.registry import canonical_hash, flatten_features
 from models.base import PredictionBundle
-
-
-def _flatten(features: dict, prefix: str = "") -> dict[str, float]:
-    out: dict[str, float] = {}
-    for k, v in features.items():
-        kk = f"{prefix}{k}"
-        if isinstance(v, dict):
-            out.update(_flatten(v, prefix=kk + "."))
-        elif isinstance(v, (int, float)):
-            out[kk] = float(v)
-        elif isinstance(v, bool):
-            out[kk] = float(v)
-    return out
 
 
 @dataclass
@@ -72,7 +59,10 @@ class XGBPredictor:
         )
 
     def _run_model(self, features: dict[str, Any]) -> float:
-        flat = _flatten(features)
+        flat = flatten_features(features)
         row = [flat.get(k, 0.0) for k in self._feature_order]
+        # TODO(plan-5b): pass NaN to XGBoost native missing-value handling
+        # instead of 0.0; current behavior conflates missing-data with
+        # signal=0 and is a known model-quality limitation.
         raw = self._model.predict_proba([row])[0, 1]
         return float(self._calibrator.transform([raw])[0])

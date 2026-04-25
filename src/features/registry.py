@@ -91,3 +91,24 @@ def build_default_registry(
         FundingFeature(symbol=symbol),
         ConfidenceFeature(direction=confidence_direction),
     ])
+
+
+def flatten_features(features: dict[str, Any], prefix: str = "") -> dict[str, float]:
+    """Recursively flatten nested feature dict to a flat {dotted.key: numeric}.
+
+    Drops non-numeric values (strings, None, lists). Used by:
+      - scripts/build_training_set.py (training-time)
+      - models.xgb_predictor.XGBPredictor._run_model (inference-time)
+    Keep these two call sites in sync via this single source of truth —
+    train/serve column drift is one of the worst silent failure modes.
+    """
+    out: dict[str, float] = {}
+    for k, v in features.items():
+        kk = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(flatten_features(v, prefix=kk + "."))
+        elif isinstance(v, bool):
+            out[kk] = float(v)
+        elif isinstance(v, (int, float)):
+            out[kk] = float(v)
+    return out
