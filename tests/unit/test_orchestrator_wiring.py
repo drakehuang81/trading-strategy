@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -19,7 +19,9 @@ def test_boot_creates_db(tmp_path: Path):
         sqlite_path=str(db),
         halt_file=str(tmp_path / "HALT"),
     ))
-    asyncio.run(orch.boot())
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=AsyncMock())):
+        asyncio.run(orch.boot())
     assert db.exists()
     assert orch.engine is not None
 
@@ -43,7 +45,9 @@ async def test_boot_scheduler_present(tmp_path: Path):
         sqlite_path=str(db),
         halt_file=str(tmp_path / "HALT"),
     ))
-    await orch.boot()
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=AsyncMock())):
+        await orch.boot()
     assert orch._scheduler is not None
 
 
@@ -62,7 +66,9 @@ async def test_run_uses_scan_context(tmp_path: Path, monkeypatch):
         telegram_token="",
     )
     orch = Orchestrator(cfg)
-    await orch.boot()
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=AsyncMock())):
+        await orch.boot()
     assert orch.ctx is not None
     assert orch.ctx.symbols == ["ETHUSDT"]
 
