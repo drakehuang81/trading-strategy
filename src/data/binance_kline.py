@@ -21,6 +21,14 @@ class BinanceKline:
     def __init__(self, client: Any) -> None:
         self._client = client
 
+    @property
+    def client(self) -> Any:
+        """Underlying python-binance AsyncClient. Exposed so callers
+        can construct adjacent writers (FundingRateWriter) without
+        re-opening a second connection. Caller does NOT own the
+        client lifecycle — `BinanceKline.close()` still closes it."""
+        return self._client
+
     @classmethod
     async def open(cls, api_key: str = "", api_secret: str = "") -> "BinanceKline":
         from binance import AsyncClient

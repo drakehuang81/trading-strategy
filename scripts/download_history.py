@@ -81,7 +81,7 @@ async def main_async(args: argparse.Namespace) -> None:
         # Funding rate (used by FundingFeature). FundingRateWriter expects an
         # async client object exposing futures_funding_rate(...).
         funding_dir = Path(args.funding_out_dir)
-        funding_writer = FundingRateWriter(client=source._client, out_dir=funding_dir)
+        funding_writer = FundingRateWriter(client=source.client, out_dir=funding_dir)
         added = await funding_writer.update(args.symbol)
         print(f"funding: {added} new rows -> {funding_dir / (args.symbol + '.parquet')}")
     finally:
@@ -91,7 +91,7 @@ async def main_async(args: argparse.Namespace) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="ETHUSDT")
-    ap.add_argument("--timeframe", default="1h")
+    ap.add_argument("--timeframe", default="1h", choices=list(_TF_TO_TIMEDELTA))
     ap.add_argument("--years", type=int, default=2)
     ap.add_argument("--out-dir", default="data/history")
     ap.add_argument("--funding-out-dir", default="data/funding")
