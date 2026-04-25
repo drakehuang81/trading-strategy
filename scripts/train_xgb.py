@@ -161,7 +161,7 @@ def train_walk_forward(
 
 
 def _register(meta: BundleMeta, out_dir: Path,
-              window_start: str, window_end: str,
+              window_start: datetime, window_end: datetime,
               sqlite_path: str) -> None:
     engine = sa.create_engine(f"sqlite:///{sqlite_path}")
     with engine.begin() as conn:
@@ -189,22 +189,36 @@ def main() -> None:
 
     X = pd.read_parquet(args.features)
     y_df = pd.read_parquet(args.labels)
+    if not X.index.is_monotonic_increasing:
+        raise ValueError(f"features index not monotonic increasing in {args.features}")
+    if X.select_dtypes(include="number").shape[1] != X.shape[1]:
+        non_numeric = X.select_dtypes(exclude="number").columns.tolist()
+        raise ValueError(f"features parquet has non-numeric columns: {non_numeric}")
     # Inner join on as_of -> drop rows where label is NaN.
     joined = X.join(y_df, how="inner")
     label_col = y_df.columns[0]
     X_aligned = joined.drop(columns=[label_col])
     y_aligned = joined[label_col].astype(int)
+    if len(X_aligned) < 100:
+        raise ValueError(
+            f"after join, only {len(X_aligned)} rows — check that "
+            f"features and labels parquets have overlapping as_of indices"
+        )
+    print(f"loaded {len(X_aligned)} rows × {X_aligned.shape[1]} features for training")
+
+    window_start = X_aligned.index.min().to_pydatetime()
+    window_end = X_aligned.index.max().to_pydatetime()
 
     meta = train_walk_forward(
         X=X_aligned, y=y_aligned,
         out_dir=args.out,
-        training_window_start=str(X_aligned.index.min()),
-        training_window_end=str(X_aligned.index.max()),
+        training_window_start=window_start.isoformat(),
+        training_window_end=window_end.isoformat(),
         n_splits=args.n_splits,
     )
     _register(meta, args.out,
-              window_start=str(X_aligned.index.min()),
-              window_end=str(X_aligned.index.max()),
+              window_start=window_start,
+              window_end=window_end,
               sqlite_path=args.sqlite_path)
     print(f"trained {meta.model_version}; calib={meta.calibration_method} "
           f"brier_iso={meta.brier_isotonic:.4f} brier_platt={meta.brier_platt:.4f}")
