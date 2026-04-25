@@ -42,6 +42,9 @@ class OrchestratorConfig:
     heartbeat_max_stale_seconds: int = 300
     paper_broker_seed: int = 42
     drift_check_interval_minutes: int = 60
+    use_trained_model: bool = False
+    model_dir: str = "models"
+    drift_reference_path: str = "models/drift_reference.json"
 
 
 class Orchestrator:
@@ -66,7 +69,7 @@ class Orchestrator:
 
         # Lazy import — wiring imports OrchestratorConfig from this module.
         from wiring import build_scan_context
-        self.ctx, self._lifecycle = build_scan_context(self.cfg, self.engine)
+        self.ctx, self._lifecycle = await build_scan_context(self.cfg, self.engine)
 
         self._scheduler = AsyncIOScheduler()
         log.info("boot_complete", sqlite=self.cfg.sqlite_path,
@@ -132,6 +135,12 @@ class Orchestrator:
         finally:
             self._scheduler.shutdown(wait=False)
             await self._lifecycle["ollama_client"].stop()
+            kline = self._lifecycle.get("binance_kline")
+            if kline is not None:
+                try:
+                    await kline.close()
+                except Exception:
+                    log.warning("binance_kline_close_failed")
             log.info("orchestrator_stopped")
 
     async def _scheduled_scan(self) -> None:

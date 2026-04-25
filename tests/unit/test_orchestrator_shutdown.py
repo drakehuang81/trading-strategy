@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -25,11 +26,16 @@ async def test_stop_event_unwinds_taskgroup(tmp_path: Path):
     )
     orch = Orchestrator(cfg)
 
+    fake_kline = AsyncMock()
+    fake_kline.close = AsyncMock()
+
     async def _run_and_stop():
         task = asyncio.create_task(orch.run())
         await asyncio.sleep(0.2)  # let boot + TaskGroup start
         orch.request_stop()
         await asyncio.wait_for(task, timeout=5.0)
 
-    await _run_and_stop()
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=fake_kline)):
+        await _run_and_stop()
     assert orch.is_stopping()

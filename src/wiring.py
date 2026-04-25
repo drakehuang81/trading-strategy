@@ -1,13 +1,8 @@
-"""Wiring factory — builds ScanContext + lifecycle bundle from OrchestratorConfig.
+"""Wiring factory — async version (Plan 5A Task 1).
 
-Single source of truth for production dependency injection. Orchestrator
-calls this once in boot(); tests wire components by hand
-(see tests/unit/test_pipeline.py).
-
-Plan-4 note: BinanceKline requires an async Binance client and
-`build_scan_context` is synchronous, so we ship a no-op in-process
-data source that returns an empty frame on `fetch_latest`. Plan 5
-replaces with `await BinanceKline.open(...)` at orchestrator boot.
+Opens the real BinanceKline and threads it into ScanContext. Mid / ATR /
+spread providers stay stubbed in this task; Tasks 2-4 wire the
+RollingKlineCache-backed providers.
 """
 from __future__ import annotations
 
@@ -15,9 +10,9 @@ import random
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import sqlalchemy as sa
 
+from data.binance_kline import BinanceKline
 from decision.ensemble import Ensemble
 from decision.halt import HaltManager
 from decision.policy import ThresholdPolicy
@@ -53,24 +48,11 @@ from orchestrator import OrchestratorConfig
 from pipeline import ScanContext
 
 
-class _StubDataSource:
-    """Placeholder data source — Plan 5 replaces with real BinanceKline."""
-    name = "stub_data_source"
-
-    def supports(self, symbol: str, timeframe: str) -> bool:
-        return True
-
-    async def fetch_latest(self, symbol: str, timeframe: str, n: int) -> pd.DataFrame:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-
-
 def _stub_mid(_symbol: str) -> float:
-    # Plan 5 will pull the latest mid from data_source cache.
     return 3000.0
 
 
 def _stub_atr(_symbol: str) -> float:
-    # Plan 5 will compute from recent klines.
     return 15.0
 
 
@@ -78,24 +60,27 @@ def _stub_spread_bps(_symbol: str) -> float:
     return 0.0
 
 
-def build_scan_context(
+async def build_scan_context(
     cfg: OrchestratorConfig,
     engine: sa.Engine,
 ) -> tuple[ScanContext, dict[str, Any]]:
-    """Build a fully wired ScanContext + lifecycle bundle."""
-    # — Data
-    data_source = _StubDataSource()
+    """Async: opens BinanceKline, builds the wired ScanContext."""
+    data_source = await BinanceKline.open()
 
-    # — Features
     registry = build_default_registry()
 
-    # — Models
-    ml = XGBPredictor.stub(prob_up=0.55, ml_model_version="stub-v0")
+    if cfg.use_trained_model:
+        # Plan 5A Task 9 wires the real load path; until then this branch is
+        # expected to raise FileNotFoundError on a fresh checkout.
+        from models.registry import load_latest_model
+        ml = load_latest_model(Path(cfg.model_dir))
+    else:
+        ml = XGBPredictor.stub(prob_up=0.55, ml_model_version="stub-v0")
+
     ollama = OllamaClient(model=cfg.ollama_model, host=cfg.ollama_host)
     gemma = GemmaContextProvider(client=ollama)
     ensemble = Ensemble(ml=ml, llm_ctx=gemma)
 
-    # — Broker
     rng = random.Random(cfg.paper_broker_seed)
     broker = PaperBroker(
         cfg=PaperBrokerConfig(),
@@ -103,7 +88,6 @@ def build_scan_context(
         mid_provider=_stub_mid,
     )
 
-    # — Policy (one symbol in watchlist for Plan 4)
     symbol = cfg.watchlist[0]
     policy = ThresholdPolicy(
         long_threshold=cfg.long_threshold,
@@ -113,7 +97,6 @@ def build_scan_context(
         atr_provider=_stub_atr,
     )
 
-    # — Risk + sizing
     risk = RiskPipeline(checks=[
         MandatoryStopLoss(),
         SpreadGate(max_bps=10.0, spread_provider=_stub_spread_bps),
@@ -122,14 +105,12 @@ def build_scan_context(
     ])
     sizer = FixedFractionalSizer(fraction=0.01)
 
-    # — Repos
     proposal_repo = ProposalRepo(engine)
     event_repo = BrokerEventRepo(engine)
     session_repo = SessionStateRepo(engine)
     message_repo = MessageRepo(engine)
     tool_call_repo = ToolCallRepo(engine)
 
-    # — ChatLLM (read-only tools)
     tool_executor = ToolExecutor(engine=engine, broker=broker)
     chat_llm = ChatLLM(
         client=ollama,
@@ -138,17 +119,15 @@ def build_scan_context(
         tool_call_repo=tool_call_repo,
     )
 
-    # — Drift monitor (state dict aliased into FeatureDriftTrigger)
     drift_cfg = load_drift_config(cfg.drift_yaml)
     drift_monitor = FeatureDriftMonitor(
-        reference={},   # populated by drift-monitor loop on first batch
+        reference={},
         psi_threshold=drift_cfg.psi_threshold,
         ks_threshold=drift_cfg.ks_threshold,
         n_bins=drift_cfg.psi_bins,
     )
     drift_state: dict[str, Any] = {"breached": False}
 
-    # — Halt manager with all three triggers populated
     halt = HaltManager(
         halt_file=Path(cfg.halt_file),
         engine=engine,
@@ -180,5 +159,6 @@ def build_scan_context(
         "ollama_client": ollama,
         "drift_state": drift_state,
         "drift_monitor": drift_monitor,
+        "binance_kline": data_source,
     }
     return ctx, lifecycle

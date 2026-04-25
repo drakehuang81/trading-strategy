@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -31,19 +32,24 @@ async def test_orchestrator_boots_and_stops(tmp_path: Path):
     )
     orch = Orchestrator(cfg)
 
-    task = asyncio.create_task(orch.run())
-    # Wait long enough for boot to finish and heartbeat loop to write one row
-    await asyncio.sleep(1.2)
+    fake_kline = AsyncMock()
+    fake_kline.close = AsyncMock()
 
-    engine = sa.create_engine(f"sqlite:///{cfg.sqlite_path}")
-    with engine.connect() as conn:
-        count = conn.execute(sa.text("SELECT COUNT(*) FROM heartbeat")).scalar()
-    assert count is not None and count >= 1
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=fake_kline)):
+        task = asyncio.create_task(orch.run())
+        # Wait long enough for boot to finish and heartbeat loop to write one row
+        await asyncio.sleep(1.2)
 
-    assert orch.ctx is not None
-    assert orch.ctx.halt is not None
-    assert len(orch.ctx.halt._triggers) == 3
+        engine = sa.create_engine(f"sqlite:///{cfg.sqlite_path}")
+        with engine.connect() as conn:
+            count = conn.execute(sa.text("SELECT COUNT(*) FROM heartbeat")).scalar()
+        assert count is not None and count >= 1
 
-    orch.request_stop()
-    await asyncio.wait_for(task, timeout=5.0)
+        assert orch.ctx is not None
+        assert orch.ctx.halt is not None
+        assert len(orch.ctx.halt._triggers) == 3
+
+        orch.request_stop()
+        await asyncio.wait_for(task, timeout=5.0)
     assert orch.is_stopping()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -29,7 +30,14 @@ def _make_drift_yaml(tmp_path: Path) -> Path:
     return y
 
 
-def test_build_scan_context_returns_wired_context(tmp_path: Path):
+def _fake_kline() -> AsyncMock:
+    kline = AsyncMock()
+    kline.close = AsyncMock()
+    return kline
+
+
+@pytest.mark.asyncio
+async def test_build_scan_context_returns_wired_context(tmp_path: Path):
     from wiring import build_scan_context
 
     engine = _engine(tmp_path)
@@ -38,7 +46,10 @@ def test_build_scan_context_returns_wired_context(tmp_path: Path):
         sqlite_path=str(tmp_path / "state.db"),
         drift_yaml=str(drift_yaml),
     )
-    ctx, lifecycle = build_scan_context(cfg, engine)
+
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=_fake_kline())):
+        ctx, lifecycle = await build_scan_context(cfg, engine)
 
     assert isinstance(ctx, ScanContext)
     assert ctx.symbols == ["ETHUSDT"]
@@ -58,11 +69,13 @@ def test_build_scan_context_returns_wired_context(tmp_path: Path):
     assert "ollama_client" in lifecycle
     assert "drift_state" in lifecycle
     assert "drift_monitor" in lifecycle
+    assert "binance_kline" in lifecycle
     # drift_state is the SAME dict the FeatureDriftTrigger reads from
     assert lifecycle["drift_state"] == {"breached": False}
 
 
-def test_build_scan_context_wires_all_three_halt_triggers(tmp_path: Path):
+@pytest.mark.asyncio
+async def test_build_scan_context_wires_all_three_halt_triggers(tmp_path: Path):
     from wiring import build_scan_context
 
     engine = _engine(tmp_path)
@@ -71,14 +84,19 @@ def test_build_scan_context_wires_all_three_halt_triggers(tmp_path: Path):
         sqlite_path=str(tmp_path / "state.db"),
         drift_yaml=str(drift_yaml),
     )
-    ctx, _ = build_scan_context(cfg, engine)
+
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=_fake_kline())):
+        ctx, _ = await build_scan_context(cfg, engine)
+
     trigger_names = {t.name for t in ctx.halt._triggers}
     assert trigger_names == {
         "heartbeat_stale", "daily_loss_kill_switch", "feature_drift",
     }
 
 
-def test_drift_trigger_and_drift_state_alias_same_object(tmp_path: Path):
+@pytest.mark.asyncio
+async def test_drift_trigger_and_drift_state_alias_same_object(tmp_path: Path):
     """Setting lifecycle['drift_state']['breached']=True must flip the trigger."""
     from wiring import build_scan_context
 
@@ -88,7 +106,10 @@ def test_drift_trigger_and_drift_state_alias_same_object(tmp_path: Path):
         sqlite_path=str(tmp_path / "state.db"),
         drift_yaml=str(drift_yaml),
     )
-    ctx, lifecycle = build_scan_context(cfg, engine)
+
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=_fake_kline())):
+        ctx, lifecycle = await build_scan_context(cfg, engine)
 
     drift_trigger = next(
         t for t in ctx.halt._triggers if t.name == "feature_drift"
