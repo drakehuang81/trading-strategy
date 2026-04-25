@@ -126,6 +126,7 @@ class Orchestrator:
                 tg.create_task(self._heartbeat_loop(), name="heartbeat")
                 tg.create_task(self._event_consumer_loop(), name="event_consumer")
                 tg.create_task(self._drift_monitor_loop(), name="drift_monitor")
+                tg.create_task(self._kline_refresh_loop(), name="kline_refresh")
                 if self._telegram is not None:
                     tg.create_task(self._telegram_loop(), name="telegram")
                 await self._stop_event.wait()  # main blocks here; signal sets it
@@ -261,3 +262,23 @@ class Orchestrator:
                     await self._telegram.stop()
                 except Exception:
                     log.exception("telegram_stop_failed")
+
+    async def _kline_refresh_loop(self) -> None:
+        """Refreshes RollingKlineCache every minute. Failures are logged
+        and swallowed; cache providers fall back to last known values."""
+        if self.ctx is None or "kline_cache" not in self._lifecycle:
+            return
+        cache = self._lifecycle["kline_cache"]
+        symbol = self.ctx.symbols[0]
+        timeframe = "1h"
+        while not self.is_stopping():
+            try:
+                df = await self.ctx.data_source.fetch_latest(symbol, timeframe, 200)
+                cache.ingest(symbol, timeframe, df)
+            except Exception:
+                log.warning("kline_refresh_failed", symbol=symbol)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=60.0)  # type: ignore[arg-type]
+            except asyncio.TimeoutError:
+                continue
+            return

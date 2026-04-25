@@ -1,8 +1,7 @@
-"""Wiring factory — async version (Plan 5A Task 1).
+"""Wiring factory — async version (Plan 5A Task 4).
 
-Opens the real BinanceKline and threads it into ScanContext. Mid / ATR /
-spread providers stay stubbed in this task; Tasks 2-4 wire the
-RollingKlineCache-backed providers.
+Opens the real BinanceKline, builds a RollingKlineCache, seeds it at boot,
+and threads cache-backed mid/ATR/spread providers into ScanContext.
 """
 from __future__ import annotations
 
@@ -13,6 +12,12 @@ from typing import Any
 import sqlalchemy as sa
 
 from data.binance_kline import BinanceKline
+from data.kline_cache import RollingKlineCache
+from data.providers import (
+    cache_backed_atr_provider,
+    cache_backed_mid_provider,
+    cache_backed_spread_bps_provider,
+)
 from decision.ensemble import Ensemble
 from decision.halt import HaltManager
 from decision.policy import ThresholdPolicy
@@ -48,18 +53,6 @@ from orchestrator import OrchestratorConfig
 from pipeline import ScanContext
 
 
-def _stub_mid(_symbol: str) -> float:
-    return 3000.0
-
-
-def _stub_atr(_symbol: str) -> float:
-    return 15.0
-
-
-def _stub_spread_bps(_symbol: str) -> float:
-    return 0.0
-
-
 async def build_scan_context(
     cfg: OrchestratorConfig,
     engine: sa.Engine,
@@ -81,25 +74,40 @@ async def build_scan_context(
     gemma = GemmaContextProvider(client=ollama)
     ensemble = Ensemble(ml=ml, llm_ctx=gemma)
 
+    symbol = cfg.watchlist[0]
+    timeframe = "1h"
+
+    cache = RollingKlineCache(max_bars=200)
+    try:
+        seed = await data_source.fetch_latest(symbol, timeframe, 200)
+        cache.ingest(symbol, timeframe, seed)
+    except Exception:
+        # Boot must succeed even if the seed fetch fails; refresh loop will
+        # try again. Keep providers in fallback mode until then.
+        pass
+
+    mid_provider = cache_backed_mid_provider(cache, timeframe=timeframe, fallback=3000.0)
+    atr_provider = cache_backed_atr_provider(cache, timeframe=timeframe, n=14, fallback=15.0)
+    spread_provider = cache_backed_spread_bps_provider(cache, fallback=0.0)
+
     rng = random.Random(cfg.paper_broker_seed)
     broker = PaperBroker(
         cfg=PaperBrokerConfig(),
         rng=rng,
-        mid_provider=_stub_mid,
+        mid_provider=mid_provider,
     )
 
-    symbol = cfg.watchlist[0]
     policy = ThresholdPolicy(
         long_threshold=cfg.long_threshold,
         short_threshold=cfg.short_threshold,
         symbol=symbol,
-        mid_provider=_stub_mid,
-        atr_provider=_stub_atr,
+        mid_provider=mid_provider,
+        atr_provider=atr_provider,
     )
 
     risk = RiskPipeline(checks=[
         MandatoryStopLoss(),
-        SpreadGate(max_bps=10.0, spread_provider=_stub_spread_bps),
+        SpreadGate(max_bps=10.0, spread_provider=spread_provider),
         DailyLossKillSwitch(threshold_r=cfg.daily_loss_max_r),
         MaxConcurrentPositions(cap=3),
     ])
@@ -160,5 +168,6 @@ async def build_scan_context(
         "drift_state": drift_state,
         "drift_monitor": drift_monitor,
         "binance_kline": data_source,
+        "kline_cache": cache,
     }
     return ctx, lifecycle
