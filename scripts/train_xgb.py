@@ -1,19 +1,27 @@
-"""Trains XGBoost on historical ETHUSDT features + isotonic calibration.
+"""Trains XGBoost on a precomputed features+labels parquet pair, runs
+walk-forward CV, picks isotonic vs Platt by OOS Brier (Plan 5A Task 8).
 
-Labels: 4-bar forward return > 0. Features: build_default_registry().
 Writes:
-  - models/xgb_<model_version>.json (booster)
-  - models/calib_<model_version>.pkl (IsotonicRegression)
-  - row in SQLite model_versions
+    <out_dir>/xgb_<model_version>.json   (booster)
+    <out_dir>/calib_<model_version>.pkl  (calibrator + feature_order)
+    <out_dir>/meta_<model_version>.json  (training window, calib comparison)
+    <out_dir>/drift_reference.json       (overwritten by Task 10)
+
+Inserts a row into model_versions.
 
 Usage:
-  python scripts/train_xgb.py --data data/ETHUSDT_1h_long.csv
+    python scripts/train_xgb.py \
+        --features data/training/ETHUSDT_1h_features.parquet \
+        --labels   data/training/ETHUSDT_1h_labels.parquet \
+        --out      models
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import pickle
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,54 +30,140 @@ import pandas as pd
 import sqlalchemy as sa
 import xgboost as xgb
 from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss
 from sklearn.model_selection import TimeSeriesSplit
 
-from features.registry import build_default_registry, flatten_features
+
+@dataclass
+class CalibrationChoice:
+    method: str               # "isotonic" or "platt"
+    brier_isotonic: float
+    brier_platt: float
+    calibrator: object        # the chosen, fit calibrator (last fold)
 
 
-def _make_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    reg = build_default_registry()
-    rows: list[dict[str, float]] = []
-    ys: list[int] = []
-    for i, ts in enumerate(df.index):
-        if i < 200 or i > len(df) - 5:
-            continue
-        feats = reg.compute_all(df, as_of=ts)
-        flat = flatten_features(feats)
-        rows.append(flat)
-        y = int(df["close"].iloc[i + 4] > df["close"].iloc[i])
-        ys.append(y)
-    X = pd.DataFrame(rows).fillna(0.0)
-    return X, pd.Series(ys, name="y")
+@dataclass
+class BundleMeta:
+    model_version: str
+    calibration_method: str
+    brier_isotonic: float
+    brier_platt: float
+    feature_order: list[str]
 
 
-def train(data_path: Path, out_dir: Path) -> str:
-    df = pd.read_csv(data_path, parse_dates=["open_time"]).set_index("open_time")
-    X, y = _make_dataset(df)
-
-    tscv = TimeSeriesSplit(n_splits=5)
-    train_idx, calib_idx = list(tscv.split(X))[-1]
+def _fit_booster(X_train: pd.DataFrame, y_train: pd.Series) -> xgb.XGBClassifier:
     booster = xgb.XGBClassifier(
         n_estimators=200, max_depth=4, learning_rate=0.05,
         eval_metric="logloss", tree_method="hist",
     )
-    booster.fit(X.iloc[train_idx], y.iloc[train_idx])
-    raw_prob = booster.predict_proba(X.iloc[calib_idx])[:, 1]
-    isotonic = IsotonicRegression(out_of_bounds="clip")
-    isotonic.fit(raw_prob, y.iloc[calib_idx])
+    booster.fit(X_train, y_train)
+    return booster
 
+
+def _fit_isotonic(raw: np.ndarray, y_calib: np.ndarray) -> IsotonicRegression:
+    iso = IsotonicRegression(out_of_bounds="clip")
+    iso.fit(raw, y_calib)
+    return iso
+
+
+def _fit_platt(raw: np.ndarray, y_calib: np.ndarray) -> LogisticRegression:
+    lr = LogisticRegression()
+    lr.fit(raw.reshape(-1, 1), y_calib)
+    return lr
+
+
+def walk_forward_calibration_choice(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+) -> CalibrationChoice:
+    """Average OOS Brier across folds for isotonic vs Platt; pick the
+    lower one. Returns the chosen calibrator fit on the LAST fold's
+    calibration set so it sees the most recent regime."""
+    # TODO(plan-5b): consider gap=horizon in TimeSeriesSplit to prevent
+    # label leakage between train/calib folds (label uses close[t+H]).
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    bs_iso: list[float] = []
+    bs_platt: list[float] = []
+    last_iso: IsotonicRegression | None = None
+    last_platt: LogisticRegression | None = None
+    splits = list(tscv.split(X))
+    for fit_idx, calib_idx in splits:
+        # Within a fold, split fit_idx in two: first 80% train booster,
+        # last 20% fit calibrator. calib_idx is the OOS chunk we score on.
+        cut = int(len(fit_idx) * 0.8)
+        train_idx, cal_idx = fit_idx[:cut], fit_idx[cut:]
+        booster = _fit_booster(X.iloc[train_idx], y.iloc[train_idx])
+        raw_cal = booster.predict_proba(X.iloc[cal_idx])[:, 1]
+        iso = _fit_isotonic(raw_cal, y.iloc[cal_idx].to_numpy())
+        platt = _fit_platt(raw_cal, y.iloc[cal_idx].to_numpy())
+
+        raw_oos = booster.predict_proba(X.iloc[calib_idx])[:, 1]
+        p_iso = iso.transform(raw_oos)
+        p_platt = platt.predict_proba(raw_oos.reshape(-1, 1))[:, 1]
+        bs_iso.append(brier_score_loss(y.iloc[calib_idx], p_iso))
+        bs_platt.append(brier_score_loss(y.iloc[calib_idx], p_platt))
+        last_iso, last_platt = iso, platt
+
+    avg_iso = float(np.mean(bs_iso))
+    avg_platt = float(np.mean(bs_platt))
+    if avg_iso <= avg_platt:
+        return CalibrationChoice("isotonic", avg_iso, avg_platt, last_iso)
+    return CalibrationChoice("platt", avg_iso, avg_platt, last_platt)
+
+
+def train_walk_forward(
+    X: pd.DataFrame,
+    y: pd.Series,
+    out_dir: Path,
+    training_window_start: str,
+    training_window_end: str,
+    n_splits: int = 5,
+) -> BundleMeta:
+    choice = walk_forward_calibration_choice(X, y, n_splits=n_splits)
+
+    # Final booster fit on ALL training rows.
+    final_booster = _fit_booster(X, y)
     out_dir.mkdir(parents=True, exist_ok=True)
-    model_version = hashlib.sha256(booster.get_booster().save_raw()).hexdigest()[:12]
-    booster.save_model(str(out_dir / f"xgb_{model_version}.json"))
-    with open(out_dir / f"calib_{model_version}.pkl", "wb") as fh:
-        pickle.dump({"isotonic": isotonic, "feature_order": list(X.columns)}, fh)
+    model_version = hashlib.sha256(
+        final_booster.get_booster().save_raw()
+    ).hexdigest()[:12]
 
-    _register(model_version, str(X.index.min()), str(X.index.max()), out_dir)
-    return model_version
+    booster_path = out_dir / f"xgb_{model_version}.json"
+    final_booster.save_model(str(booster_path))
+    calib_path = out_dir / f"calib_{model_version}.pkl"
+    with open(calib_path, "wb") as fh:
+        pickle.dump({
+            "calibrator": choice.calibrator,
+            "feature_order": list(X.columns),
+        }, fh)
+
+    meta = BundleMeta(
+        model_version=model_version,
+        calibration_method=choice.method,
+        brier_isotonic=choice.brier_isotonic,
+        brier_platt=choice.brier_platt,
+        feature_order=list(X.columns),
+    )
+    meta_path = out_dir / f"meta_{model_version}.json"
+    meta_path.write_text(json.dumps({
+        "model_version": meta.model_version,
+        "calibration_method": meta.calibration_method,
+        "brier_isotonic": meta.brier_isotonic,
+        "brier_platt": meta.brier_platt,
+        "training_window_start": training_window_start,
+        "training_window_end": training_window_end,
+        "feature_order": meta.feature_order,
+    }, indent=2))
+
+    return meta
 
 
-def _register(model_version: str, start: str, end: str, out_dir: Path) -> None:
-    engine = sa.create_engine("sqlite:///data/state.db")
+def _register(meta: BundleMeta, out_dir: Path,
+              window_start: str, window_end: str,
+              sqlite_path: str) -> None:
+    engine = sa.create_engine(f"sqlite:///{sqlite_path}")
     with engine.begin() as conn:
         conn.execute(sa.text(
             "INSERT OR REPLACE INTO model_versions "
@@ -77,18 +171,44 @@ def _register(model_version: str, start: str, end: str, out_dir: Path) -> None:
             " calibration_method, deployed_at) "
             "VALUES (:mv, :path, :s, :e, :cm, :ts)"
         ), {
-            "mv": model_version,
-            "path": str(out_dir / f"xgb_{model_version}.json"),
-            "s": start, "e": end,
-            "cm": "isotonic",
+            "mv": meta.model_version,
+            "path": str(out_dir / f"xgb_{meta.model_version}.json"),
+            "s": window_start, "e": window_end, "cm": meta.calibration_method,
             "ts": datetime.now(tz=timezone.utc),
         })
 
 
-if __name__ == "__main__":
+def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True, type=Path)
+    ap.add_argument("--features", required=True, type=Path)
+    ap.add_argument("--labels", required=True, type=Path)
     ap.add_argument("--out", default=Path("models"), type=Path)
+    ap.add_argument("--n-splits", type=int, default=5)
+    ap.add_argument("--sqlite-path", default="data/state.db")
     args = ap.parse_args()
-    mv = train(args.data, args.out)
-    print(f"Trained model_version={mv}")
+
+    X = pd.read_parquet(args.features)
+    y_df = pd.read_parquet(args.labels)
+    # Inner join on as_of -> drop rows where label is NaN.
+    joined = X.join(y_df, how="inner")
+    label_col = y_df.columns[0]
+    X_aligned = joined.drop(columns=[label_col])
+    y_aligned = joined[label_col].astype(int)
+
+    meta = train_walk_forward(
+        X=X_aligned, y=y_aligned,
+        out_dir=args.out,
+        training_window_start=str(X_aligned.index.min()),
+        training_window_end=str(X_aligned.index.max()),
+        n_splits=args.n_splits,
+    )
+    _register(meta, args.out,
+              window_start=str(X_aligned.index.min()),
+              window_end=str(X_aligned.index.max()),
+              sqlite_path=args.sqlite_path)
+    print(f"trained {meta.model_version}; calib={meta.calibration_method} "
+          f"brier_iso={meta.brier_isotonic:.4f} brier_platt={meta.brier_platt:.4f}")
+
+
+if __name__ == "__main__":
+    main()

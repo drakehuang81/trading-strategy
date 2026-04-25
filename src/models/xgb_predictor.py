@@ -35,8 +35,13 @@ class XGBPredictor:
         booster.load_model(model_path)
         with open(calib_path, "rb") as fh:
             meta = pickle.load(fh)
+        # Prefer the new "calibrator" key (Plan 5A Task 8); fall back to the
+        # original "isotonic" key for bundles produced by the pre-rewrite
+        # script.
+        calibrator = meta.get("calibrator", meta.get("isotonic"))
+        if calibrator is None:
+            raise ValueError(f"meta at {calib_path} missing calibrator")
         version = Path(model_path).stem.removeprefix("xgb_")
-        calibrator = meta.get("calibrator") or meta["isotonic"]
         return cls(
             _model=booster,
             _calibrator=calibrator,
@@ -66,4 +71,10 @@ class XGBPredictor:
         # instead of 0.0; current behavior conflates missing-data with
         # signal=0 and is a known model-quality limitation.
         raw = self._model.predict_proba([row])[0, 1]
-        return float(self._calibrator.transform([raw])[0])
+        # Isotonic: .transform([raw]) -> array.  Platt (LogisticRegression):
+        # .predict_proba([[raw]])[:, 1].
+        if hasattr(self._calibrator, "transform"):
+            calibrated = self._calibrator.transform([raw])[0]
+        else:
+            calibrated = self._calibrator.predict_proba([[raw]])[0, 1]
+        return float(calibrated)
