@@ -140,7 +140,7 @@ class Orchestrator:
                 try:
                     await kline.close()
                 except Exception:
-                    log.warning("binance_kline_close_failed")
+                    log.exception("binance_kline_close_failed")
             log.info("orchestrator_stopped")
 
     async def _scheduled_scan(self) -> None:

@@ -38,3 +38,29 @@ async def test_build_scan_context_is_async(tmp_path):
     assert ctx.symbols == ["ETHUSDT"]
     assert "binance_kline" in lifecycle
     assert lifecycle["binance_kline"] is fake_kline
+
+
+@pytest.mark.asyncio
+async def test_use_trained_model_branch_fails_when_registry_missing(tmp_path):
+    """Pins the contract: use_trained_model=True must reach models.registry.
+    Until Task 9 ships that module, this branch raises ModuleNotFoundError
+    (or, once Task 9 lands but no bundles exist, FileNotFoundError)."""
+    cfg = OrchestratorConfig(
+        sqlite_path=str(tmp_path / "state.db"),
+        halt_file=str(tmp_path / "HALT"),
+        drift_yaml="config/drift.yaml",
+        use_trained_model=True,
+        model_dir=str(tmp_path / "models"),  # nonexistent
+    )
+    import alembic.command, alembic.config
+    ac = alembic.config.Config("alembic.ini")
+    ac.set_main_option("sqlalchemy.url", f"sqlite:///{cfg.sqlite_path}")
+    alembic.command.upgrade(ac, "head")
+    engine = sa.create_engine(f"sqlite:///{cfg.sqlite_path}")
+
+    fake_kline = AsyncMock()
+    fake_kline.close = AsyncMock()
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=fake_kline)):
+        with pytest.raises((ModuleNotFoundError, FileNotFoundError)):
+            await build_scan_context(cfg, engine)
