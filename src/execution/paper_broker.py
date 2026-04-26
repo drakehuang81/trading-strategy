@@ -20,6 +20,11 @@ from typing import AsyncIterator, Callable
 import pandas as pd
 
 from execution.base import Balance, BrokerEvent, Order, OrderId, Position
+from execution.cost_model import (
+    SlippageConfig,
+    slippage_fill_price,
+    taker_or_maker_fee,
+)
 
 
 @dataclass
@@ -76,12 +81,15 @@ class PaperBroker:
             return
 
         mid = self.mid_provider(order.symbol)
-        sign = 1 if order.side == "buy" else -1
-        slip_bps = (
-            self.cfg.slippage_bps_base
-            + self.cfg.slippage_bps_per_adv_unit * (order.qty / self.cfg.adv_stub)
+        slip_cfg = SlippageConfig(
+            slippage_bps_base=self.cfg.slippage_bps_base,
+            slippage_bps_per_adv_unit=self.cfg.slippage_bps_per_adv_unit,
+            adv_stub=self.cfg.adv_stub,
         )
-        fill_price = mid * (1 + sign * slip_bps / 10_000)
+        fill_price = slippage_fill_price(
+            mid=mid, side=order.side, qty=order.qty, cfg=slip_cfg,
+        )
+        sign = 1 if order.side == "buy" else -1
 
         if self.rng.random() < self.cfg.partial_fill_prob:
             first_qty = order.qty * self.rng.uniform(0.3, 0.7)
@@ -123,8 +131,12 @@ class PaperBroker:
                     reason: str | None = None) -> None:
         fee = None
         if price is not None and qty is not None:
-            fee_bps = self.cfg.taker_bps if (order and order.type == "market") else self.cfg.maker_bps
-            fee = price * abs(qty) * fee_bps / 10_000
+            fee = taker_or_maker_fee(
+                price=price, qty=qty,
+                order_type=order.type if order else "market",
+                taker_bps=self.cfg.taker_bps,
+                maker_bps=self.cfg.maker_bps,
+            )
         event = BrokerEvent(
             event_id=str(uuid.uuid4()),
             kind=kind, order_id=order_id,
