@@ -78,12 +78,24 @@ async def main_async(args: argparse.Namespace) -> None:
         upsert_parquet(kline_path, klines)
         print(f"klines: {len(klines)} bars -> {kline_path}")
 
-        # Funding rate (used by FundingFeature). FundingRateWriter expects an
-        # async client object exposing futures_funding_rate(...).
         funding_dir = Path(args.funding_out_dir)
         funding_writer = FundingRateWriter(client=source.client, out_dir=funding_dir)
+        funding_path = funding_dir / f"{args.symbol}.parquet"
+
+        # Decide: backfill if parquet is missing OR doesn't reach `since`.
+        needs_backfill = True
+        if funding_path.exists():
+            from data.funding import load_funding
+            existing = load_funding(funding_path)
+            if not existing.empty and existing.index.min().to_pydatetime() <= since:
+                needs_backfill = False
+
+        if needs_backfill:
+            backfilled = await funding_writer.backfill(args.symbol, since=since)
+            print(f"funding backfill: {backfilled} rows fetched")
+
         added = await funding_writer.update(args.symbol)
-        print(f"funding: {added} new rows -> {funding_dir / (args.symbol + '.parquet')}")
+        print(f"funding update: {added} new rows -> {funding_path}")
     finally:
         await source.close()
 
