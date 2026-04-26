@@ -12,14 +12,12 @@ from data.funding import FundingRateWriter, load_funding
 
 
 class _ChunkedFakeFundingClient:
-    """Fake Binance AsyncClient that returns predictable chunks based on endTime.
+    """Fake Binance AsyncClient that models real Binance startTime/endTime semantics.
 
     Holds an ordered list of (ts_ms, rate) rows representing the full universe
-    of available funding history. Each `futures_funding_rate(endTime=X)` call
-    returns up to `limit` rows with `fundingTime <= X`, ordered ascending by
-    fundingTime. When the universe is exhausted (no rows at or before
-    endTime), returns []. Tracks call count so tests can assert pagination
-    actually happened.
+    of available funding history. Each `futures_funding_rate` call returns up to
+    `limit` rows filtered by [startTime, endTime], oldest-first — matching real
+    Binance behavior. Tracks calls so tests can assert pagination actually happened.
     """
 
     def __init__(self, rows: list[tuple[int, float]]) -> None:
@@ -34,12 +32,17 @@ class _ChunkedFakeFundingClient:
         endTime: int | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
-        self.calls.append({"endTime": endTime, "limit": limit})
-        if endTime is None:
-            # Real Binance returns OLDEST rows when neither startTime nor endTime given
-            chosen = self._rows[:limit]
-        else:
-            chosen = [r for r in self._rows if r[0] <= endTime][-limit:]
+        self.calls.append({"startTime": startTime, "endTime": endTime, "limit": limit})
+        # Real Binance semantics:
+        # - returns rows where (startTime is None or ts >= startTime) AND (endTime is None or ts <= endTime)
+        # - sorted oldest-first
+        # - capped at limit
+        rows = self._rows
+        if startTime is not None:
+            rows = [r for r in rows if r[0] >= startTime]
+        if endTime is not None:
+            rows = [r for r in rows if r[0] <= endTime]
+        chosen = rows[:limit]
         return [{"fundingTime": ts, "fundingRate": str(rate)} for ts, rate in chosen]
 
     async def close_connection(self) -> None:
@@ -76,28 +79,25 @@ async def test_backfill_paginates_until_since(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_backfill_stops_when_chunk_predates_since(tmp_path: Path):
-    """When chunk earliest row is < since, we stop without paging further."""
+async def test_backfill_starts_at_since_and_walks_forward(tmp_path: Path):
+    """Forward pagination from since should fetch rows from since onward."""
     base = datetime(2024, 1, 1, tzinfo=timezone.utc)
     universe = _make_universe(base, n=2200)
     client = _ChunkedFakeFundingClient(universe)
     writer = FundingRateWriter(client=client, out_dir=tmp_path)
 
-    # since = 6 months in (~540 funding ticks from start), so we should grab
-    # ~1660 rows (the slice from since to now, +/- one chunk worth of overshoot
-    # because we don't slice mid-chunk).
+    # since = 6 months in (~540 ticks). Should fetch from there to universe end.
     since = base + timedelta(days=180)
     universe_max = base + timedelta(hours=2199 * 8)
     n_added = await writer.backfill("ETHUSDT", since=since, until=universe_max)
 
     df = load_funding(tmp_path / "ETHUSDT.parquet")
-    # We must cover everything from `since` onward (no gap).
-    assert df.index.min().to_pydatetime() <= since
-    assert df.index.max().to_pydatetime() >= base + timedelta(hours=2199 * 8)
-    # We did at least 2 pages (because page 1 alone can't reach 1660 rows).
+    # All rows >= since (forward paginate doesn't fetch older).
+    assert df.index.min().to_pydatetime() >= since
+    # Coverage extends to universe end.
+    assert df.index.max().to_pydatetime() == universe_max
+    # We did at least 2 pages (1660 rows requires 2 pages of 1000).
     assert len(client.calls) >= 2
-    # Stop condition fired: we did NOT keep paging for ages.
-    assert len(client.calls) <= 4
     assert n_added == len(df)
 
 

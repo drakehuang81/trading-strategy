@@ -43,11 +43,12 @@ class FundingRateWriter:
         since: datetime,
         until: datetime | None = None,
     ) -> int:
-        """Paginate Binance funding history backward from `until` toward `since`.
+        """Forward-paginate Binance funding history from `since` to `until`.
 
-        Walks endTime cursor in 1000-row chunks. Stops on either:
-          - chunk earliest row predates `since` (we've covered the requested range), or
-          - chunk is empty (no more history available from the exchange).
+        Walks startTime cursor forward in 1000-row chunks. Stops on either:
+          - empty chunk (no more history in window), or
+          - chunk shorter than limit (last page reached), or
+          - cursor passes `until`.
 
         Idempotent: re-running on top of an existing parquet dedupes by ts.
         Default `until=None` uses `datetime.now(timezone.utc)`; pass explicit
@@ -56,24 +57,30 @@ class FundingRateWriter:
         Returns the number of rows fetched from the API across all pages
         (NOT the number of *new* rows added to disk — re-running still returns
         a positive number on the second call).
+
+        Note: BACKWARD pagination via `endTime` cursor does NOT work against
+        real Binance (it returns the OLDEST 1000 rows ≤ endTime, not the
+        newest). Forward pagination is the only correct strategy.
         """
         if since.tzinfo is None:
             raise ValueError("backfill requires timezone-aware `since` (use UTC)")
         if until is not None and until.tzinfo is None:
             raise ValueError("backfill requires timezone-aware `until` (use UTC)")
         if until is None:
+            from datetime import timezone
             until = datetime.now(timezone.utc)
 
         out = self._out_dir / f"{symbol}.parquet"
         existing = load_funding(out) if out.exists() else pd.DataFrame()
 
         since_ms = int(since.timestamp() * 1000)
-        end_cursor: int = int(until.timestamp() * 1000)
+        until_ms = int(until.timestamp() * 1000)
+        cursor_ms = since_ms
         all_rows: list[dict[str, Any]] = []
         seen_ms: set[int] = set()
-        while True:
+        while cursor_ms < until_ms:
             chunk = await self._client.futures_funding_rate(
-                symbol=symbol, endTime=end_cursor, limit=1000,
+                symbol=symbol, startTime=cursor_ms, endTime=until_ms, limit=1000,
             )
             if not chunk:
                 break
@@ -82,12 +89,15 @@ class FundingRateWriter:
                 seen_ms.add(int(r["fundingTime"]))
             all_rows.extend(new_chunk)
 
-            chunk_min_ms = min(int(r["fundingTime"]) for r in chunk)
-            # may overshoot since by up to limit-1 rows; intentional — we don't slice mid-chunk
-            if chunk_min_ms <= since_ms:
+            chunk_max_ms = max(int(r["fundingTime"]) for r in chunk)
+            next_cursor = chunk_max_ms + 1
+            if next_cursor <= cursor_ms:
+                break  # safety: no progress (shouldn't happen with good data)
+            cursor_ms = next_cursor
+
+            # Last page: chunk shorter than limit means no more data in window.
+            if len(chunk) < 1000:
                 break
-            # Page back: next chunk's endTime is one ms before this chunk's earliest.
-            end_cursor = chunk_min_ms - 1
 
         if not all_rows:
             return 0
