@@ -31,6 +31,7 @@ from execution.paper_broker import PaperBrokerConfig
 class ReplayBroker:
     cfg: PaperBrokerConfig
     klines: pd.DataFrame
+    symbol: str = "ETHUSDT"
     funding: pd.DataFrame | None = None
     initial_equity_usdt: float = 10_000.0
     _current_ts: pd.Timestamp | None = None
@@ -60,11 +61,15 @@ class ReplayBroker:
             raise RuntimeError(
                 "ReplayBroker.set_time must be called before submit"
             )
+        if order.symbol != self.symbol:
+            raise ValueError(
+                f"ReplayBroker is configured for {self.symbol!r} but received order for {order.symbol!r}"
+            )
         order_id = str(uuid.uuid4())
         self._orders[order_id] = order
         await self._emit("submitted", order_id, order)
 
-        mid = self._current_close(order.symbol)
+        mid = self._current_close()
         fill_price = slippage_fill_price(
             mid=mid, side=order.side, qty=order.qty, cfg=self.cfg.slippage,
         )
@@ -90,16 +95,17 @@ class ReplayBroker:
         while True:
             yield await self._queue.get()
 
-    def _current_close(self, symbol: str) -> float:
-        # Single-symbol replay; ignore symbol arg.
+    def _close_at(self, ts: pd.Timestamp) -> float:
+        """Returns close of the kline whose index is <= ts (last bar at or before ts)."""
+        sub = self.klines[self.klines.index <= ts]
+        if sub.empty:
+            raise RuntimeError(f"no kline at or before {ts}")
+        return float(sub["close"].iloc[-1])
+
+    def _current_close(self) -> float:
         if self._current_ts is None:
             raise RuntimeError("clock not set")
-        sub = self.klines[self.klines.index <= self._current_ts]
-        if sub.empty:
-            raise RuntimeError(
-                f"no kline at or before {self._current_ts}"
-            )
-        return float(sub["close"].iloc[-1])
+        return self._close_at(self._current_ts)
 
     def _update_position(self, symbol: str, signed_qty: float,
                          fill_price: float) -> None:
@@ -116,11 +122,16 @@ class ReplayBroker:
             del self._positions[symbol]
             return
         if (existing.qty > 0) == (signed_qty > 0):
+            # Same side: VWAP across fills.
             new_avg = (
                 existing.avg_entry * existing.qty + fill_price * signed_qty
             ) / new_qty
+        elif (existing.qty > 0) != (new_qty > 0):
+            # Crossed zero: closed old position, opened new opposite at fill_price.
+            new_avg = fill_price
         else:
-            new_avg = existing.avg_entry  # reducing position keeps entry basis
+            # Partial reduction (still same side as existing): keep entry basis.
+            new_avg = existing.avg_entry
         self._positions[symbol] = existing.model_copy(update={
             "qty": new_qty,
             "avg_entry": new_avg,
@@ -129,7 +140,7 @@ class ReplayBroker:
 
     def _charge_funding(self, ts: pd.Timestamp, rate: float) -> None:
         for sym, pos in self._positions.items():
-            mid = self._current_close(sym)
+            mid = self._close_at(ts)
             fee = pos.qty * mid * rate
             self._queue.put_nowait(BrokerEvent(
                 event_id=str(uuid.uuid4()),

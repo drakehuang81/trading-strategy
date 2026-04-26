@@ -134,3 +134,69 @@ async def test_balance_returns_initial_equity(cfg):
     rb = ReplayBroker(cfg=cfg, klines=_klines(), initial_equity_usdt=5_000.0)
     bal = await rb.balance()
     assert bal.equity_usdt == 5_000.0
+
+
+@pytest.mark.asyncio
+async def test_cross_zero_resets_entry_basis(cfg):
+    """long 0.1 @3000 → sell 0.15 @3020 → SHORT 0.05 with avg_entry=3020."""
+    klines = _klines()
+    rb = ReplayBroker(cfg=cfg, klines=klines)
+    rb.set_time(klines.index[0])  # close 3005
+    o1 = Order(client_order_id="c1", symbol="ETHUSDT", side="buy",
+               type="market", qty=0.1)
+    await rb.submit(o1)
+    for _ in range(2):
+        await asyncio.wait_for(rb._queue.get(), timeout=0.5)
+
+    rb.set_time(klines.index[2])  # close 3025
+    o2 = Order(client_order_id="c2", symbol="ETHUSDT", side="sell",
+               type="market", qty=0.15)
+    await rb.submit(o2)
+    for _ in range(2):
+        await asyncio.wait_for(rb._queue.get(), timeout=0.5)
+
+    pos = await rb.positions()
+    assert len(pos) == 1
+    assert abs(pos[0].qty - (-0.05)) < 1e-9
+    # entry basis should be the cross-zero fill price (close 3025 with -1 bps slip on sell)
+    expected_entry = 3025.0 * (1 - 1.0 / 10_000)
+    assert abs(pos[0].avg_entry - expected_entry) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_funding_charges_at_funding_tick_close_not_current_ts(cfg):
+    """Funding fee must use the close at the funding tick, not the current ts."""
+    klines = _klines()
+    base = klines.index[0]              # close 3005
+    funding_ts = base + timedelta(hours=2)  # at this ts, last close <= ts is index[2] = 3025
+    funding = pd.DataFrame(
+        {"funding_rate": [0.0001]},
+        index=pd.DatetimeIndex([funding_ts], name="ts"),
+    )
+    rb = ReplayBroker(cfg=cfg, klines=klines, funding=funding)
+    rb.set_time(base)
+    order = Order(client_order_id="c1", symbol="ETHUSDT", side="buy",
+                  type="market", qty=0.1)
+    await rb.submit(order)
+    for _ in range(2):
+        await asyncio.wait_for(rb._queue.get(), timeout=0.5)
+
+    # Advance well past the funding tick; funding should fire.
+    rb.set_time(base + timedelta(hours=4))
+    funding_event = await asyncio.wait_for(rb._queue.get(), timeout=0.5)
+    assert funding_event.kind == "funding_charged"
+    # Fee = qty * close_at_funding_tick * rate = 0.1 * 3025 * 0.0001 = 0.030250
+    expected_fee = 0.1 * 3025.0 * 0.0001
+    assert abs(funding_event.fee - expected_fee) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_wrong_symbol(cfg):
+    """ReplayBroker is single-symbol; submitting BTCUSDT against an ETH cfg raises."""
+    klines = _klines()
+    rb = ReplayBroker(cfg=cfg, klines=klines, symbol="ETHUSDT")
+    rb.set_time(klines.index[0])
+    btc_order = Order(client_order_id="c1", symbol="BTCUSDT", side="buy",
+                      type="market", qty=0.01)
+    with pytest.raises(ValueError, match="BTCUSDT"):
+        await rb.submit(btc_order)
