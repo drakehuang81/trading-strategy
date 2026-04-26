@@ -1,7 +1,6 @@
 """Plan 5A end-to-end smoke: trained model + real-shaped klines + one scan."""
 from __future__ import annotations
 
-import asyncio
 import json
 import pickle
 from datetime import datetime, timedelta, timezone
@@ -58,8 +57,8 @@ async def test_real_data_smoke_inserts_proposal_row(tmp_path):
     # Discover the actual feature_order our registry would emit for these
     # synthetic klines (avoids hardcoding the column list).
     from features.registry import build_default_registry, flatten_features
-    feats = build_default_registry().compute_all(_fake_klines(),
-                                                  as_of=_fake_klines().index[-1])
+    klines = _fake_klines()
+    feats = build_default_registry().compute_all(klines, as_of=klines.index[-1])
     feature_order = sorted(flatten_features(feats).keys())
     model_dir = tmp_path / "models"
     model_dir.mkdir()
@@ -72,14 +71,13 @@ async def test_real_data_smoke_inserts_proposal_row(tmp_path):
         use_trained_model=True,
         model_dir=str(model_dir),
         drift_reference_path=str(tmp_path / "missing.json"),  # absent on purpose
-        ollama_host="http://127.0.0.1:0",  # no Ollama; Ensemble fallback path
         long_threshold=0.0,                # accept any prob_up so we get a proposal
         short_threshold=0.0,
     )
 
     orch = Orchestrator(cfg)
     fake_kline = AsyncMock()
-    fake_kline.fetch_latest = AsyncMock(return_value=_fake_klines())
+    fake_kline.fetch_latest = AsyncMock(return_value=klines)
     fake_kline.close = AsyncMock()
     with patch("data.binance_kline.BinanceKline.open",
                new=AsyncMock(return_value=fake_kline)):

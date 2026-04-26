@@ -81,6 +81,8 @@ Observed: **1 passed, 2.91s**. Log output confirmed:
 
 Brier 0.2502 vs baseline 0.25 (Brier of `p=0.5`) means the model has **near-zero alpha** on raw 4-bar direction prediction. This matches spec §12's red flag ("single asset, single timeframe ML — expect IC near zero after costs"). Plan 5A's goal was to ship the pipeline, not to ship a profitable model. Plan 5B's training improvements (triple barrier, gap=horizon, NaN handling, more features) are needed before the §10.1.3 calibration gate can plausibly pass.
 
+> ⚠️ **DO NOT enable `cfg.use_trained_model=True` in any live or paper-money configuration based on Plan 5A artifacts.** The current model has no demonstrated edge. Live-mode promotion requires Plan 5B's calibration gate (§10.1.3) + walk-forward Deflated Sharpe (§10.1.2) + 60-day paper runtime (§10.2.4) — all explicitly out of Plan 5A scope.
+
 ## What is NOT done (Plan 5B scope)
 
 **Step 0 of Plan 5B work** — re-run training to backfill `drift_reference.json` (~3-5 min, no code change needed):
