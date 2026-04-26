@@ -107,18 +107,26 @@ async def build_scan_context(
     elif cfg.broker_kind == "replay":
         from execution.replay_broker import ReplayBroker
         replay_klines = pd.read_parquet(cfg.replay_kline_path)
-        replay_funding = (
-            pd.read_parquet(cfg.replay_funding_path)
-            if Path(cfg.replay_funding_path).exists()
-            else None
-        )
+        if Path(cfg.replay_funding_path).exists():
+            replay_funding = pd.read_parquet(cfg.replay_funding_path)
+        else:
+            log.warning("replay_funding_missing",
+                        path=cfg.replay_funding_path,
+                        note="backtest PnL will exclude funding cost")
+            replay_funding = None
         broker = ReplayBroker(
             cfg=PaperBrokerConfig(),
             klines=replay_klines,
             funding=replay_funding,
+            symbol=symbol,
         )
     elif cfg.broker_kind == "live":
         from execution.live_broker import LiveBroker
+        log.warning(
+            "live_broker_stub_active",
+            note="LiveBroker.submit raises until Plan 5D + Pre-Live Gate; "
+                 "every scan-time submit will fail",
+        )
         broker = LiveBroker()
     else:
         raise ValueError(f"unknown broker_kind: {cfg.broker_kind!r}")
