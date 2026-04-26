@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 
 from data.binance_kline import BinanceKline
-from data.funding import FundingRateWriter
+from data.funding import FundingRateWriter, load_funding
 
 _TF_TO_TIMEDELTA = {
     "1m": timedelta(minutes=1), "5m": timedelta(minutes=5),
@@ -85,7 +85,6 @@ async def main_async(args: argparse.Namespace) -> None:
         # Decide: backfill if parquet is missing OR doesn't reach `since`.
         needs_backfill = True
         if funding_path.exists():
-            from data.funding import load_funding
             existing = load_funding(funding_path)
             if not existing.empty and existing.index.min().to_pydatetime() <= since:
                 needs_backfill = False
