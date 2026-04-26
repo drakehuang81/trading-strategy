@@ -128,4 +128,14 @@ async def test_backfill_dedupes_against_existing_parquet(tmp_path: Path):
     # We let the implementation define n2's semantic: it's documentation of API
     # cost, not of new-row count. Either contract is acceptable; pin whatever
     # we ship.
-    assert isinstance(n2, int)
+    assert n2 == 500   # rows fetched from API; net rows added to disk = 0
+
+
+@pytest.mark.asyncio
+async def test_backfill_rejects_naive_datetime(tmp_path: Path):
+    """Naive datetime would silently produce wrong epoch — must raise."""
+    client = _ChunkedFakeFundingClient(rows=[])
+    writer = FundingRateWriter(client=client, out_dir=tmp_path)
+    naive = datetime(2024, 1, 1)  # NO tzinfo
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await writer.backfill("ETHUSDT", since=naive)

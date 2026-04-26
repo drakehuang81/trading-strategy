@@ -36,7 +36,7 @@ class FundingRateWriter:
         combined.to_parquet(out)
         return len(new_df)
 
-    async def backfill(self, symbol: str, since: "datetime") -> int:
+    async def backfill(self, symbol: str, *, since: datetime) -> int:
         """Paginate Binance funding history backward until reaching `since`.
 
         Walks endTime cursor in 1000-row chunks. Stops on either:
@@ -50,6 +50,9 @@ class FundingRateWriter:
         a positive number on the second call). For a precise "rows added to
         disk" count, diff `len(load_funding(...))` before and after.
         """
+        if since.tzinfo is None:
+            raise ValueError("backfill requires timezone-aware `since` (use UTC)")
+
         out = self._out_dir / f"{symbol}.parquet"
         existing = load_funding(out) if out.exists() else pd.DataFrame()
 
@@ -69,6 +72,7 @@ class FundingRateWriter:
             all_rows.extend(new_chunk)
 
             chunk_min_ms = min(int(r["fundingTime"]) for r in chunk)
+            # may overshoot since by up to limit-1 rows; intentional — we don't slice mid-chunk
             if chunk_min_ms <= since_ms:
                 break
             # Page back: next chunk's endTime is one ms before this chunk's earliest.
