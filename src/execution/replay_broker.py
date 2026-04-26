@@ -110,6 +110,15 @@ class ReplayBroker:
             except asyncio.QueueEmpty:
                 return out
 
+    @property
+    def current_ts(self) -> "pd.Timestamp | None":
+        """Public accessor for the broker's clock — used by backtest harness."""
+        return self._current_ts
+
+    def current_mid(self) -> float:
+        """Returns the current bar's close (mid). Raises if clock not set."""
+        return self._current_close()
+
     def _close_at(self, ts: pd.Timestamp) -> float:
         """Returns close of the kline whose index is <= ts (last bar at or before ts)."""
         sub = self.klines[self.klines.index <= ts]

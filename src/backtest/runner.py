@@ -12,11 +12,9 @@ Then computes Sharpe + Deflated Sharpe over per-bar returns.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from backtest.equity import equity_curve
@@ -24,8 +22,8 @@ from decision.policy import ThresholdPolicy
 from decision.proposal import PortfolioSnapshot
 from execution.base import BrokerEvent, Order
 from execution.replay_broker import ReplayBroker
-from features.registry import flatten_features
 from models.base import Predictor
+from observability.sharpe import sharpe_ratio, deflated_sharpe_ratio, PERIODS_PER_YEAR_1H
 
 
 @dataclass
@@ -62,16 +60,9 @@ class BacktestRunner:
             long_threshold=self.long_threshold,
             short_threshold=self.short_threshold,
             symbol=self.symbol,
-            mid_provider=lambda _s: float(
-                self.klines.loc[self.broker._current_ts]["close"]
-            ),
+            mid_provider=lambda _s: self.broker.current_mid(),
             atr_provider=lambda _s: 15.0,        # constant ATR for baseline
         )
-        portfolio = PortfolioSnapshot(
-            equity_usdt=self.initial_equity_usdt,
-            open_positions={}, day_pnl_r=0.0, consecutive_wins=0,
-        )
-
         all_events: list[BrokerEvent] = []
         n_trades = 0
 
@@ -82,9 +73,21 @@ class BacktestRunner:
                 all_events.append(e)
                 if e.kind == "filled":
                     n_trades += 1
-            # Predict.
+
             if ts not in self.features.index:
                 continue
+
+            # Refresh portfolio per bar so any future Policy that reads it
+            # (e.g. RiskManager checks) sees current broker state.
+            balance = await self.broker.balance()
+            positions = await self.broker.positions()
+            portfolio = PortfolioSnapshot(
+                equity_usdt=balance.equity_usdt,
+                open_positions={p.symbol: p.qty for p in positions},
+                day_pnl_r=0.0,           # not tracked in backtest baseline
+                consecutive_wins=0,       # not tracked in backtest baseline
+            )
+
             feats_row = self.features.loc[ts]
             # Convert row → flat dict; predictor stubs accept any shape;
             # trained models look up flat keys via feature_order.
@@ -117,7 +120,6 @@ class BacktestRunner:
         )
         returns = equity.pct_change().dropna()
 
-        from observability.sharpe import sharpe_ratio, deflated_sharpe_ratio, PERIODS_PER_YEAR_1H
         sr = sharpe_ratio(returns.to_numpy(), periods_per_year=PERIODS_PER_YEAR_1H)
         dsr = deflated_sharpe_ratio(
             returns.to_numpy(), n_trials=self.n_trials,

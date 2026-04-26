@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -72,9 +71,7 @@ async def main_async(args: argparse.Namespace) -> None:
         "oos_end": str(oos_end),
         "ml_model_version": model.ml_model_version,
     }
-    run_id = hashlib.sha256(
-        json.dumps(summary, sort_keys=True, default=str).encode()
-    ).hexdigest()[:12]
+    run_id = uuid.uuid4().hex[:12]
 
     engine = sa.create_engine(f"sqlite:///{args.sqlite_path}")
     with engine.begin() as conn:
