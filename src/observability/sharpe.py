@@ -11,6 +11,19 @@ Formula (simplified, periodic-Sharpe form):
     DSR = (SR - SR0) * sqrt(T - 1) / sqrt(1 - skew*SR + (kurt-1)/4 * SR^2)
 where T is the number of return observations, N is the number of trials.
 
+The function returns Phi(z) = norm.cdf(z), the probability that the
+true Sharpe exceeds zero given the observation. Multiply with norm.ppf
+to recover the raw z-score. The plan's original spec said "return raw
+z" but we ship the probability form because:
+  (a) it matches the function's "probability-of-skill" docstring,
+  (b) the Pre-Live Gate threshold (spec §10.1.2 "DSR > 0.5") is
+      naturally a probability,
+  (c) it's the conventional Bailey-de Prado deliverable.
+
+Convention reference: DSR = 0.5 means observed SR equals the
+expected best-of-N null. DSR = 0.95 is the conventional
+"this is real" bar (Bailey-de Prado 2014 §4).
+
 Returns NaN on degenerate input (zero variance, T<2). DSR can be
 negative (model worse than expected-best-of-N null).
 """
@@ -23,6 +36,9 @@ from scipy.stats import skew as scipy_skew, kurtosis as scipy_kurt
 from scipy.stats import norm
 
 EULER_GAMMA = 0.5772156649015329
+
+PERIODS_PER_YEAR_1H = 24 * 365   # 8760
+PERIODS_PER_YEAR_DAILY = 252
 
 
 def sharpe_ratio(returns: np.ndarray | list[float],

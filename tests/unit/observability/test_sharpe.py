@@ -38,14 +38,13 @@ def test_deflated_sharpe_below_observed_when_n_trials_high():
     assert dsr_n2 > dsr_n100
 
 
-def test_deflated_sharpe_n_trials_one_equals_observed_z():
-    """With n_trials=1 the SR0 correction is 0, so DSR is just the
-    z-score of observed Sharpe under the normal-Sharpe assumption."""
+def test_deflated_sharpe_n_trials_one_is_bounded_probability():
+    """With n_trials=1, SR0=0; for zero-drift returns the observed
+    SR is ~0, so DSR (probability) is centred near 0.5."""
     rng = np.random.default_rng(0)
     returns = rng.normal(0.0, 0.01, size=500)
-    sr = sharpe_ratio(returns, periods_per_year=252)
     dsr = deflated_sharpe_ratio(returns, n_trials=1, periods_per_year=252)
-    # With zero-drift returns, observed Sharpe ~0, DSR also ~0 ± small.
-    assert abs(dsr) < 0.5
-    # And DSR is bounded — not exploding even with n_trials=1.
-    assert -10 < dsr < 10
+    # Probability bounded in [0, 1].
+    assert 0.0 <= dsr <= 1.0
+    # For zero-drift returns, expected dsr is near 0.5 ± noise.
+    assert 0.2 <= dsr <= 0.8
