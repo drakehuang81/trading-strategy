@@ -1,7 +1,7 @@
 """Equity curve from broker events — Plan 5B-3 Task 3."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterable
 
 import pandas as pd
@@ -15,6 +15,8 @@ def equity_curve(*, events: Iterable[BrokerEvent],
     """Build a per-bar equity Series from a stream of broker events.
 
     `mark_prices` provides per-bar marks (DatetimeIndex → close price).
+    `mark_prices` keys must be tz-aware datetimes (UTC), matching
+    BrokerEvent.ts_epoch_ms semantics.
     Each event lands at the bar matching its `ts_epoch_ms`.
 
     Equity update rules:
@@ -31,6 +33,11 @@ def equity_curve(*, events: Iterable[BrokerEvent],
     `initial_equity` at the earliest mark price (or alone if empty).
     """
     sorted_marks = sorted(mark_prices.keys())
+    if sorted_marks and sorted_marks[0].tzinfo is None:
+        raise ValueError(
+            "mark_prices keys must be tz-aware datetimes (UTC). "
+            "Naive datetimes silently misalign with BrokerEvent.ts_epoch_ms (UTC)."
+        )
     if not sorted_marks:
         return pd.Series([initial_equity])
 
@@ -68,6 +75,10 @@ def equity_curve(*, events: Iterable[BrokerEvent],
                         pos_qty = new_qty
                         pos_avg = e.fill_price
                     else:
+                        # Partial reduce, same direction: realised PnL on the
+                        # closing leg already moved into cash above; remaining
+                        # qty is still MtM'd against the original entry basis,
+                        # so avg_entry intentionally stays unchanged.
                         pos_qty = new_qty
                         # avg_entry stays
                 else:
