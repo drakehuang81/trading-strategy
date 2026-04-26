@@ -33,9 +33,11 @@ class PaperBrokerConfig:
     maker_bps: float = 2.0
     latency_ms_mean: float = 200.0
     latency_ms_stdev: float = 50.0
-    slippage_bps_base: float = 1.0
-    slippage_bps_per_adv_unit: float = 20.0
-    adv_stub: float = 1000.0
+    slippage: SlippageConfig = field(default_factory=lambda: SlippageConfig(
+        slippage_bps_base=1.0,
+        slippage_bps_per_adv_unit=20.0,
+        adv_stub=1000.0,
+    ))
     partial_fill_prob: float = 0.15
     rejection_prob: float = 0.01
 
@@ -81,13 +83,8 @@ class PaperBroker:
             return
 
         mid = self.mid_provider(order.symbol)
-        slip_cfg = SlippageConfig(
-            slippage_bps_base=self.cfg.slippage_bps_base,
-            slippage_bps_per_adv_unit=self.cfg.slippage_bps_per_adv_unit,
-            adv_stub=self.cfg.adv_stub,
-        )
         fill_price = slippage_fill_price(
-            mid=mid, side=order.side, qty=order.qty, cfg=slip_cfg,
+            mid=mid, side=order.side, qty=order.qty, cfg=self.cfg.slippage,
         )
         sign = 1 if order.side == "buy" else -1
 
