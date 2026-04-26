@@ -36,7 +36,8 @@ class _ChunkedFakeFundingClient:
     ) -> list[dict[str, Any]]:
         self.calls.append({"endTime": endTime, "limit": limit})
         if endTime is None:
-            chosen = self._rows[-limit:]
+            # Real Binance returns OLDEST rows when neither startTime nor endTime given
+            chosen = self._rows[:limit]
         else:
             chosen = [r for r in self._rows if r[0] <= endTime][-limit:]
         return [{"fundingTime": ts, "fundingRate": str(rate)} for ts, rate in chosen]
@@ -63,7 +64,8 @@ async def test_backfill_paginates_until_since(tmp_path: Path):
     writer = FundingRateWriter(client=client, out_dir=tmp_path)
 
     since = base                                       # ask for the full universe
-    n_added = await writer.backfill("ETHUSDT", since=since)
+    universe_max = base + timedelta(hours=2199 * 8)
+    n_added = await writer.backfill("ETHUSDT", since=since, until=universe_max)
 
     assert n_added == 2200
     df = load_funding(tmp_path / "ETHUSDT.parquet")
@@ -85,7 +87,8 @@ async def test_backfill_stops_when_chunk_predates_since(tmp_path: Path):
     # ~1660 rows (the slice from since to now, +/- one chunk worth of overshoot
     # because we don't slice mid-chunk).
     since = base + timedelta(days=180)
-    n_added = await writer.backfill("ETHUSDT", since=since)
+    universe_max = base + timedelta(hours=2199 * 8)
+    n_added = await writer.backfill("ETHUSDT", since=since, until=universe_max)
 
     df = load_funding(tmp_path / "ETHUSDT.parquet")
     # We must cover everything from `since` onward (no gap).
@@ -104,7 +107,8 @@ async def test_backfill_stops_on_empty_chunk(tmp_path: Path):
     client = _ChunkedFakeFundingClient(rows=[])  # empty universe
     writer = FundingRateWriter(client=client, out_dir=tmp_path)
 
-    n = await writer.backfill("ETHUSDT", since=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    until = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    n = await writer.backfill("ETHUSDT", since=datetime(2024, 1, 1, tzinfo=timezone.utc), until=until)
     assert n == 0
     # No parquet should be written when no rows came back.
     assert not (tmp_path / "ETHUSDT.parquet").exists()
@@ -118,10 +122,11 @@ async def test_backfill_dedupes_against_existing_parquet(tmp_path: Path):
     client = _ChunkedFakeFundingClient(universe)
     writer = FundingRateWriter(client=client, out_dir=tmp_path)
 
-    n1 = await writer.backfill("ETHUSDT", since=base)
+    universe_max = base + timedelta(hours=499 * 8)
+    n1 = await writer.backfill("ETHUSDT", since=base, until=universe_max)
     assert n1 == 500
     # Run again — should produce 0 new rows, parquet stays at 500.
-    n2 = await writer.backfill("ETHUSDT", since=base)
+    n2 = await writer.backfill("ETHUSDT", since=base, until=universe_max)
     df = load_funding(tmp_path / "ETHUSDT.parquet")
     assert len(df) == 500
     # n2 reports rows fetched from API (still 500), but the parquet doesn't grow.
@@ -139,3 +144,14 @@ async def test_backfill_rejects_naive_datetime(tmp_path: Path):
     naive = datetime(2024, 1, 1)  # NO tzinfo
     with pytest.raises(ValueError, match="timezone-aware"):
         await writer.backfill("ETHUSDT", since=naive)
+
+
+@pytest.mark.asyncio
+async def test_backfill_rejects_naive_until(tmp_path: Path):
+    """Naive until would silently produce wrong epoch — must raise."""
+    client = _ChunkedFakeFundingClient(rows=[])
+    writer = FundingRateWriter(client=client, out_dir=tmp_path)
+    aware_since = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    naive_until = datetime(2026, 4, 1)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await writer.backfill("ETHUSDT", since=aware_since, until=naive_until)

@@ -5,7 +5,7 @@ with DatetimeIndex (UTC) and single column funding_rate (float).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,28 +36,39 @@ class FundingRateWriter:
         combined.to_parquet(out)
         return len(new_df)
 
-    async def backfill(self, symbol: str, *, since: datetime) -> int:
-        """Paginate Binance funding history backward until reaching `since`.
+    async def backfill(
+        self,
+        symbol: str,
+        *,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> int:
+        """Paginate Binance funding history backward from `until` toward `since`.
 
         Walks endTime cursor in 1000-row chunks. Stops on either:
           - chunk earliest row predates `since` (we've covered the requested range), or
           - chunk is empty (no more history available from the exchange).
 
         Idempotent: re-running on top of an existing parquet dedupes by ts.
+        Default `until=None` uses `datetime.now(timezone.utc)`; pass explicit
+        `until` from tests for determinism.
 
         Returns the number of rows fetched from the API across all pages
         (NOT the number of *new* rows added to disk — re-running still returns
-        a positive number on the second call). For a precise "rows added to
-        disk" count, diff `len(load_funding(...))` before and after.
+        a positive number on the second call).
         """
         if since.tzinfo is None:
             raise ValueError("backfill requires timezone-aware `since` (use UTC)")
+        if until is not None and until.tzinfo is None:
+            raise ValueError("backfill requires timezone-aware `until` (use UTC)")
+        if until is None:
+            until = datetime.now(timezone.utc)
 
         out = self._out_dir / f"{symbol}.parquet"
         existing = load_funding(out) if out.exists() else pd.DataFrame()
 
         since_ms = int(since.timestamp() * 1000)
-        end_cursor: int | None = None
+        end_cursor: int = int(until.timestamp() * 1000)
         all_rows: list[dict[str, Any]] = []
         seen_ms: set[int] = set()
         while True:
