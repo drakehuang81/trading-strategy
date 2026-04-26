@@ -95,6 +95,21 @@ class ReplayBroker:
         while True:
             yield await self._queue.get()
 
+    def drain_events(self) -> list[BrokerEvent]:
+        """Synchronously drain all currently queued events.
+
+        Returns events in FIFO order, then leaves the queue empty.
+        Used by the backtest harness to process per-bar event batches
+        without async iteration. Production paper mode should still use
+        `events()` for streaming.
+        """
+        out: list[BrokerEvent] = []
+        while True:
+            try:
+                out.append(self._queue.get_nowait())
+            except asyncio.QueueEmpty:
+                return out
+
     def _close_at(self, ts: pd.Timestamp) -> float:
         """Returns close of the kline whose index is <= ts (last bar at or before ts)."""
         sub = self.klines[self.klines.index <= ts]

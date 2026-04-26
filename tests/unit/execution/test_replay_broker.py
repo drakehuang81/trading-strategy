@@ -200,3 +200,21 @@ async def test_submit_rejects_wrong_symbol(cfg):
                       type="market", qty=0.01)
     with pytest.raises(ValueError, match="BTCUSDT"):
         await rb.submit(btc_order)
+
+
+@pytest.mark.asyncio
+async def test_drain_events_returns_queued_then_empty(cfg):
+    klines = _klines()
+    rb = ReplayBroker(cfg=cfg, klines=klines)
+    rb.set_time(klines.index[0])
+    o = Order(client_order_id="c1", symbol="ETHUSDT", side="buy",
+              type="market", qty=0.1)
+    await rb.submit(o)
+
+    drained = rb.drain_events()
+    assert len(drained) == 2
+    assert drained[0].kind == "submitted"
+    assert drained[1].kind == "filled"
+
+    # Second drain returns nothing
+    assert rb.drain_events() == []
