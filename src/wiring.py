@@ -9,6 +9,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import sqlalchemy as sa
 import structlog
 
@@ -97,11 +98,30 @@ async def build_scan_context(
     spread_provider = cache_backed_spread_bps_provider(cache, fallback=0.0)
 
     rng = random.Random(cfg.paper_broker_seed)
-    broker = PaperBroker(
-        cfg=PaperBrokerConfig(),
-        rng=rng,
-        mid_provider=mid_provider,
-    )
+    if cfg.broker_kind == "paper":
+        broker = PaperBroker(
+            cfg=PaperBrokerConfig(),
+            rng=rng,
+            mid_provider=mid_provider,
+        )
+    elif cfg.broker_kind == "replay":
+        from execution.replay_broker import ReplayBroker
+        replay_klines = pd.read_parquet(cfg.replay_kline_path)
+        replay_funding = (
+            pd.read_parquet(cfg.replay_funding_path)
+            if Path(cfg.replay_funding_path).exists()
+            else None
+        )
+        broker = ReplayBroker(
+            cfg=PaperBrokerConfig(),
+            klines=replay_klines,
+            funding=replay_funding,
+        )
+    elif cfg.broker_kind == "live":
+        from execution.live_broker import LiveBroker
+        broker = LiveBroker()
+    else:
+        raise ValueError(f"unknown broker_kind: {cfg.broker_kind!r}")
 
     policy = ThresholdPolicy(
         long_threshold=cfg.long_threshold,

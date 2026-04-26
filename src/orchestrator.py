@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import sqlalchemy as sa
@@ -45,6 +45,9 @@ class OrchestratorConfig:
     use_trained_model: bool = False
     model_dir: str = "models"
     drift_reference_path: str = "models/drift_reference.json"
+    broker_kind: Literal["paper", "replay", "live"] = "paper"
+    replay_kline_path: str = "data/history/ETHUSDT_1h.parquet"
+    replay_funding_path: str = "data/funding/ETHUSDT.parquet"
 
 
 class Orchestrator:
