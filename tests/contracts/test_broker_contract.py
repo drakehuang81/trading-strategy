@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import random
+from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 
 from execution.base import Order
+from execution.cost_model import SlippageConfig
 from execution.paper_broker import PaperBroker, PaperBrokerConfig
+from execution.replay_broker import ReplayBroker
 
 
 @pytest.fixture
@@ -25,6 +29,31 @@ def paper_broker():
         rng=random.Random(1),
         mid_provider=lambda s: 2000.0,
     )
+
+
+@pytest.fixture
+def replay_broker():
+    base = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    klines = pd.DataFrame({
+        "open":   [3000.0, 3010.0, 3020.0],
+        "high":   [3015.0, 3025.0, 3035.0],
+        "low":    [2985.0, 2995.0, 3005.0],
+        "close":  [3005.0, 3015.0, 3025.0],
+        "volume": [1.0, 1.0, 1.0],
+    }, index=pd.DatetimeIndex(
+        [base + timedelta(hours=i) for i in range(3)], name="open_time",
+    ))
+    rb = ReplayBroker(
+        cfg=PaperBrokerConfig(
+            taker_bps=5.0, maker_bps=2.0,
+            slippage=SlippageConfig(
+                slippage_bps_base=1.0, slippage_bps_per_adv_unit=0.0, adv_stub=1000.0,
+            ),
+        ),
+        klines=klines,
+    )
+    rb.set_time(klines.index[1])
+    return rb
 
 
 class BrokerContractTests:
@@ -60,3 +89,7 @@ class BrokerContractTests:
 
 class TestPaperBrokerContract(BrokerContractTests):
     broker_fixture = "paper_broker"
+
+
+class TestReplayBrokerContract(BrokerContractTests):
+    broker_fixture = "replay_broker"
