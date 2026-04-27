@@ -322,3 +322,118 @@ def test_gate_drift_fails_with_recent_drift_halt(tmp_path):
                        watchdog_log_path="", model_dir="")
     result = DriftStabilityGate().evaluate(ctx)
     assert not result.passed
+
+
+# ── Gate 7: watchdog uptime ─────────────────────────────────────
+
+def _write_watchdog_log(path: Path, days_span: int, last_minutes_ago: int) -> None:
+    """Write watchdog ping log spanning days_span days ending last_minutes_ago ago."""
+    now = datetime.now(tz=timezone.utc)
+    last = now - timedelta(minutes=last_minutes_ago)
+    first = last - timedelta(days=days_span)
+    # One ping per hour for the span.
+    n = days_span * 24
+    lines = [(first + timedelta(hours=i)).isoformat() for i in range(n + 1)]
+    lines[-1] = last.isoformat()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_gate_watchdog_passes_with_7d_log_and_recent_ping(tmp_path):
+    from execution.pre_live_gate import GateContext, WatchdogUptimeGate
+    log = tmp_path / "watchdog.log"
+    _write_watchdog_log(log, days_span=8, last_minutes_ago=2)
+    ctx = GateContext(sqlite_path="", brier_threshold=0.24,
+                       watchdog_log_path=str(log), model_dir="")
+    result = WatchdogUptimeGate().evaluate(ctx)
+    assert result.passed
+
+
+def test_gate_watchdog_fails_when_log_missing(tmp_path):
+    from execution.pre_live_gate import GateContext, WatchdogUptimeGate
+    ctx = GateContext(sqlite_path="", brier_threshold=0.24,
+                       watchdog_log_path=str(tmp_path / "missing.log"),
+                       model_dir="")
+    result = WatchdogUptimeGate().evaluate(ctx)
+    assert not result.passed
+
+
+def test_gate_watchdog_fails_when_latest_ping_too_old(tmp_path):
+    from execution.pre_live_gate import GateContext, WatchdogUptimeGate
+    log = tmp_path / "watchdog.log"
+    _write_watchdog_log(log, days_span=8, last_minutes_ago=30)
+    ctx = GateContext(sqlite_path="", brier_threshold=0.24,
+                       watchdog_log_path=str(log), model_dir="")
+    result = WatchdogUptimeGate().evaluate(ctx)
+    assert not result.passed
+    assert "30" in result.reason or "stale" in result.reason.lower()
+
+
+def test_gate_watchdog_fails_when_log_span_under_7d(tmp_path):
+    from execution.pre_live_gate import GateContext, WatchdogUptimeGate
+    log = tmp_path / "watchdog.log"
+    _write_watchdog_log(log, days_span=3, last_minutes_ago=2)
+    ctx = GateContext(sqlite_path="", brier_threshold=0.24,
+                       watchdog_log_path=str(log), model_dir="")
+    result = WatchdogUptimeGate().evaluate(ctx)
+    assert not result.passed
+    assert "7" in result.reason
+
+
+# ── Gate 8: HALT fire-drill diversity ───────────────────────────
+
+def test_gate_halt_diversity_passes_with_three_trigger_kinds_plus_resume(tmp_path):
+    from execution.pre_live_gate import GateContext, HaltDiversityGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    base = datetime.now(tz=timezone.utc) - timedelta(days=5)
+    rows = [
+        ("daily_loss_kill_switch", base, base + timedelta(hours=1)),
+        ("feature_drift", base + timedelta(days=1), None),
+        ("broker_desync", base + timedelta(days=2), None),
+    ]
+    with engine.begin() as conn:
+        for src, activated, resumed in rows:
+            conn.execute(sa.text(
+                "INSERT INTO halt_events (activated_at, trigger_source, reason, resumed_at) "
+                "VALUES (:a, :s, 'test', :r)"
+            ), {"a": activated, "s": src, "r": resumed})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = HaltDiversityGate().evaluate(ctx)
+    assert result.passed
+
+
+def test_gate_halt_diversity_fails_when_missing_kind(tmp_path):
+    from execution.pre_live_gate import GateContext, HaltDiversityGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    base = datetime.now(tz=timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO halt_events (activated_at, trigger_source, reason, resumed_at) "
+            "VALUES (:a, 'daily_loss_kill_switch', 'test', :r)"
+        ), {"a": base, "r": base + timedelta(hours=1)})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = HaltDiversityGate().evaluate(ctx)
+    assert not result.passed
+    assert "feature_drift" in result.reason or "broker_desync" in result.reason
+
+
+def test_gate_halt_diversity_fails_when_no_resume(tmp_path):
+    from execution.pre_live_gate import GateContext, HaltDiversityGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    base = datetime.now(tz=timezone.utc)
+    with engine.begin() as conn:
+        for src in ["daily_loss_kill_switch", "feature_drift", "broker_desync"]:
+            conn.execute(sa.text(
+                "INSERT INTO halt_events (activated_at, trigger_source, reason) "
+                "VALUES (:a, :s, 'test')"
+            ), {"a": base, "s": src})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = HaltDiversityGate().evaluate(ctx)
+    assert not result.passed
+    assert "resume" in result.reason.lower()

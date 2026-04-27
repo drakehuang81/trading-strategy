@@ -219,3 +219,69 @@ class DriftStabilityGate:
                               f"{n} drift HALT(s) in last {self.window_days}d")
         return GateResult(self.name, True,
                           f"0 drift HALTs in last {self.window_days}d")
+
+
+@dataclass(frozen=True)
+class WatchdogUptimeGate:
+    name: str = "watchdog_uptime"
+    min_uptime_days: int = 7
+    max_stale_minutes: int = 10
+
+    def evaluate(self, ctx: GateContext) -> GateResult:
+        log = Path(ctx.watchdog_log_path)
+        if not log.exists():
+            return GateResult(self.name, False,
+                              f"watchdog log not found at {log}")
+        lines = [ln for ln in log.read_text().splitlines() if ln.strip()]
+        if not lines:
+            return GateResult(self.name, False, "watchdog log is empty")
+        try:
+            timestamps = [pd.Timestamp(ln) for ln in lines]
+        except Exception as e:
+            return GateResult(self.name, False,
+                              f"watchdog log parse error: {e}")
+        first = timestamps[0]
+        latest = timestamps[-1]
+        now_ts = (pd.Timestamp(ctx.now_iso) if ctx.now_iso
+                  else pd.Timestamp.now(tz="UTC"))
+        stale_min = (now_ts - latest).total_seconds() / 60
+        if stale_min > self.max_stale_minutes:
+            return GateResult(self.name, False,
+                              f"latest ping {stale_min:.1f}min old "
+                              f"(stale > {self.max_stale_minutes}min)")
+        span_days = (latest - first).total_seconds() / 86400
+        if span_days < self.min_uptime_days:
+            return GateResult(self.name, False,
+                              f"watchdog log spans {span_days:.1f}d "
+                              f"< required {self.min_uptime_days}d")
+        return GateResult(self.name, True,
+                          f"{span_days:.1f}d uptime, latest "
+                          f"{stale_min:.1f}min ago")
+
+
+_REQUIRED_HALT_KINDS = ("daily_loss_kill_switch", "feature_drift", "broker_desync")
+
+
+@dataclass(frozen=True)
+class HaltDiversityGate:
+    name: str = "halt_diversity"
+
+    def evaluate(self, ctx: GateContext) -> GateResult:
+        engine = sa.create_engine(f"sqlite:///{ctx.sqlite_path}")
+        with engine.begin() as conn:
+            seen = {r[0] for r in conn.execute(sa.text(
+                "SELECT DISTINCT trigger_source FROM halt_events"
+            )).fetchall()}
+            resumed_count = conn.execute(sa.text(
+                "SELECT COUNT(*) FROM halt_events WHERE resumed_at IS NOT NULL"
+            )).fetchone()[0]
+        missing = [k for k in _REQUIRED_HALT_KINDS if k not in seen]
+        if missing:
+            return GateResult(self.name, False,
+                              f"missing trigger_source(s): {missing}")
+        if resumed_count == 0:
+            return GateResult(self.name, False,
+                              "no halt_events have been followed by /resume")
+        return GateResult(self.name, True,
+                          f"all 3 trigger families present; "
+                          f"{resumed_count} resumed")

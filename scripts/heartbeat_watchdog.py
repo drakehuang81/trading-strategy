@@ -56,16 +56,27 @@ def check_heartbeat_staleness(
     return False
 
 
+def _record_ping(log_path: Path) -> None:
+    """Append current UTC timestamp to watchdog ping log."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a") as fh:
+        fh.write(datetime.now(tz=timezone.utc).isoformat() + "\n")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Heartbeat watchdog (external monitor)")
     ap.add_argument("--sqlite", default="data/state.db", help="Path to SQLite database")
     ap.add_argument("--halt-file", default="HALT", help="Path to HALT file")
     ap.add_argument("--max-stale-minutes", type=int, default=5)
+    ap.add_argument("--watchdog-log", default="data/watchdog_pings.log",
+                    help="Path to watchdog ping log")
     args = ap.parse_args()
 
     engine = sa.create_engine(f"sqlite:///{args.sqlite}")
     halt_file = Path(args.halt_file)
     is_stale = check_heartbeat_staleness(engine, halt_file, args.max_stale_minutes)
+
+    _record_ping(Path(args.watchdog_log))
 
     if is_stale:
         print("STALE — HALT file written", file=sys.stderr)
