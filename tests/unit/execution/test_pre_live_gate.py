@@ -188,3 +188,137 @@ def test_gate_brier_fails_when_no_model_meta(tmp_path):
     result = CalibrationBrierGate().evaluate(ctx)
     assert not result.passed
     assert "no model" in result.reason.lower()
+
+
+def _seed_heartbeat(engine: sa.Engine, days: int, gap_minutes: int = 5) -> None:
+    """Seed heartbeat rows every gap_minutes for `days` consecutive days,
+    ending at now."""
+    now = datetime.now(tz=timezone.utc)
+    n = (days * 24 * 60) // gap_minutes
+    rows = [{"ts": now - timedelta(minutes=gap_minutes * i),
+             "trace_id": f"t{i}"} for i in range(n)]
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO heartbeat (ts, trace_id) VALUES (:ts, :trace_id)"
+        ), rows)
+
+
+def _seed_filled_broker_events(engine: sa.Engine, n: int) -> None:
+    now = datetime.now(tz=timezone.utc)
+    with engine.begin() as conn:
+        for i in range(n):
+            conn.execute(sa.text(
+                "INSERT INTO broker_events "
+                "(event_id, kind, order_id, ts, fill_price, fill_qty, fee) "
+                "VALUES (:eid, 'filled', :oid, :ts, 3000.0, 0.01, 0.15)"
+            ), {"eid": f"e{i}", "oid": f"o{i}",
+                "ts": now - timedelta(hours=i)})
+
+
+# ── Gate 4: 60-day heartbeat + 30 fills ─────────────────────────
+
+def test_gate_paper_runtime_passes_with_60d_heartbeat_and_30_fills(tmp_path):
+    from execution.pre_live_gate import GateContext, PaperRuntimeGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    _seed_heartbeat(engine, days=60, gap_minutes=5)
+    _seed_filled_broker_events(engine, n=30)
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = PaperRuntimeGate().evaluate(ctx)
+    assert result.passed
+
+
+def test_gate_paper_runtime_fails_with_too_few_heartbeat_days(tmp_path):
+    from execution.pre_live_gate import GateContext, PaperRuntimeGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    _seed_heartbeat(engine, days=10, gap_minutes=5)
+    _seed_filled_broker_events(engine, n=30)
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = PaperRuntimeGate().evaluate(ctx)
+    assert not result.passed
+    assert "60" in result.reason
+
+
+def test_gate_paper_runtime_fails_with_too_few_fills(tmp_path):
+    from execution.pre_live_gate import GateContext, PaperRuntimeGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    _seed_heartbeat(engine, days=60, gap_minutes=5)
+    _seed_filled_broker_events(engine, n=5)
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = PaperRuntimeGate().evaluate(ctx)
+    assert not result.passed
+    assert "30" in result.reason
+
+
+# ── Gate 5: reconciliation stability ────────────────────────────
+
+def test_gate_reconciliation_passes_when_no_recent_diffs(tmp_path):
+    from execution.pre_live_gate import GateContext, ReconciliationGate
+    db = tmp_path / "state.db"
+    _bootstrap_db(str(db))
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = ReconciliationGate().evaluate(ctx)
+    assert result.passed
+
+
+def test_gate_reconciliation_fails_with_recent_unresolved_diff(tmp_path):
+    from execution.pre_live_gate import GateContext, ReconciliationGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO reconciliation_diffs (ts, kind, diff_json, resolution) "
+            "VALUES (:ts, 'position', '{}', 'halted')"
+        ), {"ts": datetime.now(tz=timezone.utc) - timedelta(days=2)})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = ReconciliationGate().evaluate(ctx)
+    assert not result.passed
+
+
+def test_gate_reconciliation_passes_with_old_diff_outside_window(tmp_path):
+    from execution.pre_live_gate import GateContext, ReconciliationGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO reconciliation_diffs (ts, kind, diff_json, resolution) "
+            "VALUES (:ts, 'position', '{}', 'halted')"
+        ), {"ts": datetime.now(tz=timezone.utc) - timedelta(days=20)})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = ReconciliationGate().evaluate(ctx)
+    assert result.passed   # 20d ago is outside 14-day window
+
+
+# ── Gate 6: drift stability (proxy: no drift halts in 30d) ──────
+
+def test_gate_drift_passes_when_no_drift_halt_in_30d(tmp_path):
+    from execution.pre_live_gate import GateContext, DriftStabilityGate
+    db = tmp_path / "state.db"
+    _bootstrap_db(str(db))
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = DriftStabilityGate().evaluate(ctx)
+    assert result.passed
+
+
+def test_gate_drift_fails_with_recent_drift_halt(tmp_path):
+    from execution.pre_live_gate import GateContext, DriftStabilityGate
+    db = tmp_path / "state.db"
+    engine = _bootstrap_db(str(db))
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO halt_events (activated_at, trigger_source, reason) "
+            "VALUES (:ts, 'feature_drift', 'PSI breach')"
+        ), {"ts": datetime.now(tz=timezone.utc) - timedelta(days=5)})
+    ctx = GateContext(sqlite_path=str(db), brier_threshold=0.24,
+                       watchdog_log_path="", model_dir="")
+    result = DriftStabilityGate().evaluate(ctx)
+    assert not result.passed

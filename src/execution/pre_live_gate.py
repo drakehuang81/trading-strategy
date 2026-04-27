@@ -10,9 +10,11 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
+import pandas as pd
 import sqlalchemy as sa
 
 
@@ -121,3 +123,99 @@ class CalibrationBrierGate:
                               f">= threshold {ctx.brier_threshold}")
         return GateResult(self.name, True,
                           f"{method} Brier {brier} < {ctx.brier_threshold}")
+
+
+@dataclass(frozen=True)
+class PaperRuntimeGate:
+    name: str = "paper_runtime"
+    min_days: int = 60
+    min_fills: int = 30
+    max_gap_minutes: int = 10
+
+    def evaluate(self, ctx: GateContext) -> GateResult:
+        engine = sa.create_engine(f"sqlite:///{ctx.sqlite_path}")
+        with engine.begin() as conn:
+            row = conn.execute(sa.text(
+                "SELECT MIN(ts), MAX(ts), COUNT(*) FROM heartbeat"
+            )).fetchone()
+            if row is None or row[0] is None:
+                return GateResult(self.name, False, "no heartbeat rows")
+            min_ts, max_ts, count = row
+            min_ts_dt = pd.Timestamp(min_ts).to_pydatetime()
+            max_ts_dt = pd.Timestamp(max_ts).to_pydatetime()
+            span_days = (max_ts_dt - min_ts_dt).total_seconds() / 86400
+            # Allow up to 1 gap-interval of tolerance to handle integer row counts
+            tolerance_days = self.max_gap_minutes / (24 * 60)
+            if span_days < self.min_days - tolerance_days:
+                return GateResult(self.name, False,
+                                  f"heartbeat span {span_days:.1f}d < {self.min_days}d")
+            ts_rows = conn.execute(sa.text(
+                "SELECT ts FROM heartbeat ORDER BY ts ASC"
+            )).fetchall()
+            ts_series = pd.to_datetime([r[0] for r in ts_rows])
+            max_gap_s = ts_series.to_series().diff().dt.total_seconds().max()
+            if max_gap_s is not None and max_gap_s > self.max_gap_minutes * 60:
+                return GateResult(self.name, False,
+                                  f"heartbeat max gap {max_gap_s/60:.1f}min "
+                                  f"> {self.max_gap_minutes}min")
+            fills_row = conn.execute(sa.text(
+                "SELECT COUNT(*) FROM broker_events "
+                "WHERE kind='filled' AND ts >= :a"
+            ), {"a": min_ts}).fetchone()
+            fills = fills_row[0] if fills_row else 0
+            if fills < self.min_fills:
+                return GateResult(self.name, False,
+                                  f"only {fills} filled events in window "
+                                  f"(need >= {self.min_fills})")
+        return GateResult(self.name, True,
+                          f"{span_days:.1f}d heartbeat, {fills} fills, "
+                          f"max gap {max_gap_s/60:.1f}min")
+
+
+@dataclass(frozen=True)
+class ReconciliationGate:
+    name: str = "reconciliation"
+    window_days: int = 14
+    accepted_resolutions: tuple[str, ...] = ("auto_repaired", "dust", "user_accepted")
+
+    def evaluate(self, ctx: GateContext) -> GateResult:
+        engine = sa.create_engine(f"sqlite:///{ctx.sqlite_path}")
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=self.window_days)
+        if ctx.now_iso:
+            cutoff = pd.Timestamp(ctx.now_iso).to_pydatetime() - timedelta(days=self.window_days)
+        with engine.begin() as conn:
+            rows = conn.execute(sa.text(
+                "SELECT id, kind, resolution FROM reconciliation_diffs "
+                "WHERE ts >= :cutoff"
+            ), {"cutoff": cutoff}).fetchall()
+        bad = [r for r in rows if r[2] not in self.accepted_resolutions]
+        if bad:
+            return GateResult(self.name, False,
+                              f"{len(bad)} unresolved diffs in last "
+                              f"{self.window_days}d (e.g. id={bad[0][0]} "
+                              f"kind={bad[0][1]} resolution={bad[0][2]})")
+        return GateResult(self.name, True,
+                          f"0 unresolved diffs in last {self.window_days}d")
+
+
+@dataclass(frozen=True)
+class DriftStabilityGate:
+    name: str = "drift_stability"
+    window_days: int = 30
+
+    def evaluate(self, ctx: GateContext) -> GateResult:
+        engine = sa.create_engine(f"sqlite:///{ctx.sqlite_path}")
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=self.window_days)
+        if ctx.now_iso:
+            cutoff = pd.Timestamp(ctx.now_iso).to_pydatetime() - timedelta(days=self.window_days)
+        with engine.begin() as conn:
+            row = conn.execute(sa.text(
+                "SELECT COUNT(*) FROM halt_events "
+                "WHERE trigger_source='feature_drift' AND activated_at >= :cutoff"
+            ), {"cutoff": cutoff}).fetchone()
+        n = row[0] if row else 0
+        if n > 0:
+            return GateResult(self.name, False,
+                              f"{n} drift HALT(s) in last {self.window_days}d")
+        return GateResult(self.name, True,
+                          f"0 drift HALTs in last {self.window_days}d")
