@@ -24,7 +24,39 @@ Test count: **359 passed** (Plan 5B-3 baseline 333 + 26 new across 5 tasks).
 
 ## Manual smoke results
 
-<!-- TODO controller: paste actual `python -m scripts.pre_live_gate ...` output + per-gate analysis -->
+`python -m scripts.pre_live_gate --sqlite-path data/state.db --model-dir models --watchdog-log data/watchdog_pings.log --brier-threshold 0.24` exits **1** with **4/8 passed**:
+
+```
+GATE                   PASS   REASON
+no_repainting          ✅      all repainting tests passed
+backtest_dsr           ✅      DSR 0.5755528922172057 > 0.5
+calibration_brier      ❌      chosen calibrator platt Brier 0.2505 >= threshold 0.24
+paper_runtime          ❌      no heartbeat rows
+reconciliation         ✅      0 unresolved diffs in last 14d
+drift_stability        ✅      0 drift HALTs in last 30d
+watchdog_uptime        ❌      watchdog log not found at data/watchdog_pings.log
+halt_diversity         ❌      missing trigger_source(s): ['daily_loss_kill_switch', 'feature_drift', 'broker_desync']
+
+FAILED gates: ['calibration_brier', 'paper_runtime', 'watchdog_uptime', 'halt_diversity']
+```
+
+Per-gate analysis:
+
+- **✅ no_repainting** — Real signal. Pytest no_repainting suite passes (Plan 1's invariant holds).
+- **✅ backtest_dsr** — Real signal. Reads Plan 5B-3's `0a5e78d23a22` row (DSR 0.576). Note: this run used loose `long_threshold=0.51`; production runs must use `>=0.58`.
+- **❌ calibration_brier** — **Real fail**. Model `92fddb72f14b` has Platt Brier 0.2505, threshold 0.24. Confirms Plan 5B-1/5B-3 conclusion: model has near-zero alpha. Plan 5C model improvements (gap=horizon, NaN handling, triple-barrier labels) needed before this passes.
+- **❌ paper_runtime** — Real fail. Orchestrator has never been left running; 0 heartbeat rows. Need 60 days continuous paper mode operation.
+- **✅ reconciliation** — **Vacuously true** (no diffs because no paper trading). False positive in spirit; will become real signal once paper trading runs and reconciliation actually executes.
+- **✅ drift_stability** — **Vacuously true** (no drift HALTs because no paper trading). Same false-positive pattern as reconciliation. Plan 5C should add `drift_state_history` table for explicit positive evidence rather than negative proxy.
+- **❌ watchdog_uptime** — Real fail. `data/watchdog_pings.log` doesn't exist; watchdog has never been deployed (launchd/cron not configured).
+- **❌ halt_diversity** — Real fail. 0 halt_events; spec requires at least one row per `daily_loss_kill_switch` / `feature_drift` / `broker_desync` plus at least one followed by `/resume`. Need fire-drill (manually trigger each HALT type once).
+
+**Operational meaning**: today's state would be blocked from live mode by 4 gates. Even after Plan 5C improves the model (likely fixes `calibration_brier`), 3 ops gates require actual deployment time:
+1. Deploy watchdog via launchd/cron → wait 7 days
+2. Run orchestrator paper-mode for 60 consecutive days with ≥30 fills
+3. Manually trigger each HALT trigger family once (fire drill)
+
+Earliest possible green: **~10 weeks from when watchdog + paper mode start running**.
 
 ## Decisions landed
 
