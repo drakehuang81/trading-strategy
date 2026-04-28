@@ -121,12 +121,46 @@ async def build_scan_context(
             symbol=symbol,
         )
     elif cfg.broker_kind == "live":
+        # Plan 5D-1: run all 8 Pre-Live Gates before allowing live mode.
         from execution.live_broker import LiveBroker
-        log.warning(
-            "live_broker_stub_active",
-            note="LiveBroker.submit raises until Plan 5D + Pre-Live Gate; "
-                 "every scan-time submit will fail",
+        from execution.pre_live_gate import (
+            BacktestDSRGate,
+            CalibrationBrierGate,
+            DriftStabilityGate,
+            GateContext,
+            HaltDiversityGate,
+            NoRepaintingGate,
+            PaperRuntimeGate,
+            PreLiveGateBlocked,
+            ReconciliationGate,
+            WatchdogUptimeGate,
+            run_all_gates,
         )
+        gate_ctx = GateContext(
+            sqlite_path=cfg.sqlite_path,
+            brier_threshold=0.24,
+            watchdog_log_path="data/watchdog_pings.log",
+            model_dir=cfg.model_dir,
+        )
+        gates = [
+            NoRepaintingGate(),
+            BacktestDSRGate(),
+            CalibrationBrierGate(),
+            PaperRuntimeGate(),
+            ReconciliationGate(),
+            DriftStabilityGate(),
+            WatchdogUptimeGate(),
+            HaltDiversityGate(),
+        ]
+        results = run_all_gates(gates, gate_ctx)
+        failed = [r.name for r in results if not r.passed]
+        if failed:
+            log.error("pre_live_gate_blocked", failed_gates=failed)
+            raise PreLiveGateBlocked(
+                f"live mode refused; failed gates: {failed}. "
+                f"Run `python -m scripts.pre_live_gate` for full per-gate reasons."
+            )
+        log.info("pre_live_gate_passed", gates=[r.name for r in results])
         broker = LiveBroker()
     else:
         raise ValueError(f"unknown broker_kind: {cfg.broker_kind!r}")

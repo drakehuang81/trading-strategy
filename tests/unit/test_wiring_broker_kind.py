@@ -89,7 +89,8 @@ async def test_broker_kind_replay_uses_replay_broker(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_broker_kind_live_uses_live_broker(tmp_path):
+async def test_broker_kind_live_blocks_when_gates_fail(tmp_path):
+    """Live mode with empty DB → most gates fail → wiring raises PreLiveGateBlocked."""
     cfg = OrchestratorConfig(
         sqlite_path=str(tmp_path / "state.db"),
         halt_file=str(tmp_path / "HALT"),
@@ -100,8 +101,44 @@ async def test_broker_kind_live_uses_live_broker(tmp_path):
     fake_kline = AsyncMock()
     fake_kline.fetch_latest = AsyncMock(return_value=pd.DataFrame())
     fake_kline.close = AsyncMock()
+    from execution.pre_live_gate import PreLiveGateBlocked
+    from unittest.mock import patch as _patch
     with patch("data.binance_kline.BinanceKline.open",
-               new=AsyncMock(return_value=fake_kline)):
+               new=AsyncMock(return_value=fake_kline)), \
+         _patch("execution.pre_live_gate._run_pytest_repainting", return_value=0):
+        with pytest.raises(PreLiveGateBlocked) as exc_info:
+            await build_scan_context(cfg, engine)
+    # Failed list should include at least these (paper_runtime, watchdog,
+    # halt_diversity, calibration_brier — though calibration may pass if no model_dir)
+    msg = str(exc_info.value)
+    assert "paper_runtime" in msg or "watchdog_uptime" in msg or "halt_diversity" in msg
+
+
+@pytest.mark.asyncio
+async def test_broker_kind_live_passes_when_all_gates_green(tmp_path):
+    """When all 8 gates would pass, wiring constructs LiveBroker normally."""
+    from unittest.mock import patch as _patch
+    from execution.pre_live_gate import GateResult
+
+    cfg = OrchestratorConfig(
+        sqlite_path=str(tmp_path / "state.db"),
+        halt_file=str(tmp_path / "HALT"),
+        drift_yaml="config/drift.yaml",
+        broker_kind="live",
+    )
+    engine = _bootstrap_engine(cfg)
+    fake_kline = AsyncMock()
+    fake_kline.fetch_latest = AsyncMock(return_value=pd.DataFrame())
+    fake_kline.close = AsyncMock()
+
+    # Patch run_all_gates to return all passing.
+    def _all_pass(gates, ctx):
+        return [GateResult(g.name, True, "stub all-green") for g in gates]
+
+    with patch("data.binance_kline.BinanceKline.open",
+               new=AsyncMock(return_value=fake_kline)), \
+         _patch("execution.pre_live_gate.run_all_gates", side_effect=_all_pass):
         ctx, _ = await build_scan_context(cfg, engine)
+
     from execution.live_broker import LiveBroker
     assert isinstance(ctx.broker, LiveBroker)

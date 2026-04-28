@@ -25,6 +25,14 @@ class GateResult:
     reason: str = ""
 
 
+class PreLiveGateBlocked(RuntimeError):
+    """Raised by wiring when broker_kind=live and one or more gates failed.
+
+    The exception message lists the failing gate names. Catch this in
+    main() if you want a friendly error; otherwise let it propagate.
+    """
+
+
 @dataclass(frozen=True)
 class GateContext:
     """Inputs every gate may need. Composed once at driver entry."""
