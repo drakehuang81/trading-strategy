@@ -8,7 +8,7 @@ Identifies liquidity pools where stop losses are clustered:
 Smart money hunts these liquidity pools before making real moves.
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 import pandas as pd
 import numpy as np
 from features.smc import find_swing_points
@@ -18,8 +18,8 @@ def find_equal_highs(
     df: pd.DataFrame,
     tolerance: float = 0.002,
     min_count: int = 2,
-    window: int = 5
-) -> List[Dict]:
+    window: int = 5,
+) -> List[Dict[str, Any]]:
     """
     Identify Equal Highs (EQH) - clusters of similar swing highs.
     
@@ -96,8 +96,8 @@ def find_equal_lows(
     df: pd.DataFrame,
     tolerance: float = 0.002,
     min_count: int = 2,
-    window: int = 5
-) -> List[Dict]:
+    window: int = 5,
+) -> List[Dict[str, Any]]:
     """
     Identify Equal Lows (EQL) - clusters of similar swing lows.
     
@@ -167,8 +167,8 @@ def find_equal_lows(
 def get_liquidity_zones(
     df: pd.DataFrame,
     tolerance: float = 0.002,
-    window: int = 5
-) -> Dict[str, List[Dict]]:
+    window: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Get all liquidity zones (both EQH and EQL).
     
@@ -188,9 +188,9 @@ def get_liquidity_zones(
 
 def check_liquidity_sweep(
     df: pd.DataFrame,
-    liquidity_zones: Dict[str, List[Dict]] = None,
-    lookback: int = 10
-) -> Dict:
+    liquidity_zones: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    lookback: int = 10,
+) -> Dict[str, Any]:
     """
     Check if a liquidity zone has been swept (taken out then reclaimed).
     
@@ -216,7 +216,7 @@ def check_liquidity_sweep(
     recent_high = recent['high'].max()
     recent_low = recent['low'].min()
     
-    result = {
+    result: Dict[str, Any] = {
         'eqh_swept': False,
         'eql_swept': False,
         'eqh_sweep_detail': None,
@@ -278,8 +278,8 @@ def check_liquidity_sweep(
 
 def get_nearest_liquidity_target(
     df: pd.DataFrame,
-    direction: str
-) -> Optional[Dict]:
+    direction: str,
+) -> Optional[Dict[str, Any]]:
     """
     Get the nearest liquidity target for a trade.
     

@@ -57,7 +57,7 @@ class BinanceKline:
         return self._to_df(raw)
 
     @staticmethod
-    def _to_df(raw: Iterable[list]) -> pd.DataFrame:
+    def _to_df(raw: Iterable[list[Any]]) -> pd.DataFrame:
         rows = list(raw)
         if not rows:
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])

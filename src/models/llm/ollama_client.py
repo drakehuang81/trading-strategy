@@ -36,7 +36,7 @@ class OllamaClient:
     def __init__(self, model: str = "gemma2:4b", host: str = "http://localhost:11434") -> None:
         self._model = model
         self._raw = ollama.AsyncClient(host=host)
-        self._instructor = instructor.from_openai(
+        self._instructor = instructor.from_openai(  # type: ignore[call-overload]
             self._raw,
             mode=instructor.Mode.JSON,
         )

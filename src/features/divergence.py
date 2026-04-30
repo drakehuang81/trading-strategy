@@ -4,12 +4,12 @@ RSI/MACD Divergence Detection Module
 Detects divergences between price and indicators.
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 import pandas as pd
 import numpy as np
 
 
-def find_local_extrema(series: pd.Series, window: int = 5):
+def find_local_extrema(series: pd.Series, window: int = 5) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Find local maxima and minima in a series."""
     values = series.values
     indices = series.index.tolist()
@@ -27,7 +27,7 @@ def find_local_extrema(series: pd.Series, window: int = 5):
     return maxima, minima
 
 
-def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5) -> Optional[Dict]:
+def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5) -> Optional[Dict[str, Any]]:
     """Detect RSI divergence."""
     if 'rsi' not in df.columns:
         return None
@@ -67,7 +67,7 @@ def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5)
     return None
 
 
-def detect_macd_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5) -> Optional[Dict]:
+def detect_macd_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5) -> Optional[Dict[str, Any]]:
     """Detect MACD histogram divergence."""
     if 'macd_hist' not in df.columns:
         return None
@@ -103,7 +103,7 @@ def detect_macd_divergence(df: pd.DataFrame, lookback: int = 30, window: int = 5
     return None
 
 
-def get_divergence_summary(df: pd.DataFrame) -> Dict:
+def get_divergence_summary(df: pd.DataFrame) -> Dict[str, Any]:
     """Get summary of all divergences."""
     rsi_div = detect_rsi_divergence(df)
     macd_div = detect_macd_divergence(df)

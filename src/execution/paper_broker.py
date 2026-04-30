@@ -19,6 +19,7 @@ from typing import AsyncIterator, Callable
 
 import pandas as pd
 
+from typing import Literal
 from execution.base import Balance, BrokerEvent, Order, OrderId, Position
 from execution.cost_model import (
     SlippageConfig,
@@ -48,7 +49,7 @@ class PaperBroker:
     rng: random.Random
     mid_provider: Callable[[str], float]
     funding_dir: Path | None = None
-    _queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _queue: asyncio.Queue[BrokerEvent] = field(default_factory=asyncio.Queue)
     _orders: dict[OrderId, Order] = field(default_factory=dict)
     _positions: dict[str, Position] = field(default_factory=dict)
     _equity_usdt: float = 10_000.0
@@ -123,9 +124,16 @@ class PaperBroker:
             )
             await self._queue.put(event)
 
-    async def _emit(self, kind: str, order_id: OrderId, order: Order | None,
-                    *, price: float | None = None, qty: float | None = None,
-                    reason: str | None = None) -> None:
+    async def _emit(
+        self,
+        kind: Literal["submitted", "partially_filled", "filled", "rejected", "cancelled", "funding_charged"],
+        order_id: OrderId,
+        order: Order | None,
+        *,
+        price: float | None = None,
+        qty: float | None = None,
+        reason: str | None = None,
+    ) -> None:
         fee = None
         if price is not None and qty is not None:
             fee = taker_or_maker_fee(

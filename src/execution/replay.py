@@ -45,7 +45,7 @@ def rebuild_positions(events: Iterable[BrokerEvent]) -> dict[str, PositionSnapsh
             symbol=sym,
             qty=round(qty, 12),
             avg_entry=(cost / qty) if qty != 0 else 0.0,
-            last_update_ts_ms=last_ts,
+            last_update_ts_ms=int(last_ts),
         )
         for sym, (qty, cost, last_ts) in agg.items()
         if abs(qty) > 1e-12

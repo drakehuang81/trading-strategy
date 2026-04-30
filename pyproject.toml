@@ -22,6 +22,10 @@ explicit_package_bases = true
 module = ["binance.*", "ta.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["yaml", "scipy.*", "apscheduler.*", "instructor.*", "ollama.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

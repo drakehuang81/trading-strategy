@@ -280,9 +280,10 @@ class HaltDiversityGate:
             seen = {r[0] for r in conn.execute(sa.text(
                 "SELECT DISTINCT trigger_source FROM halt_events"
             )).fetchall()}
-            resumed_count = conn.execute(sa.text(
+            _resumed_row = conn.execute(sa.text(
                 "SELECT COUNT(*) FROM halt_events WHERE resumed_at IS NOT NULL"
-            )).fetchone()[0]
+            )).fetchone()
+            resumed_count = _resumed_row[0] if _resumed_row is not None else 0
         missing = [k for k in _REQUIRED_HALT_KINDS if k not in seen]
         if missing:
             return GateResult(self.name, False,

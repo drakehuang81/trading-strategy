@@ -4,7 +4,7 @@
 Based on crypto_trading_skill SKILL.md Line 600-637.
 """
 
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -30,7 +30,7 @@ SCORE_RATINGS = {
 }
 
 
-def check_htf_bias(htf_bias: str, direction: str) -> Dict:
+def check_htf_bias(htf_bias: str, direction: str) -> Dict[str, Any]:
     """Check if HTF bias aligns with trade direction."""
     aligned = (
         (htf_bias == "BULLISH" and direction == "LONG") or
@@ -44,7 +44,7 @@ def check_htf_bias(htf_bias: str, direction: str) -> Dict:
     }
 
 
-def check_smc_poi(poi: Dict) -> Dict:
+def check_smc_poi(poi: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Check if a valid SMC POI exists."""
     has_poi = poi is not None and poi.get('type') in ['ORDER_BLOCK', 'FVG', 'SWING_LOW', 'SWING_HIGH']
     return {
@@ -55,7 +55,7 @@ def check_smc_poi(poi: Dict) -> Dict:
     }
 
 
-def check_fib_confluence(fib_analysis: Dict) -> Dict:
+def check_fib_confluence(fib_analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Check if price is in OTE zone or at Fib level."""
     is_ote = fib_analysis.get('confluence', {}).get('is_ote', False)
     is_at_fib = fib_analysis.get('confluence', {}).get('is_at_fib', False)
@@ -68,7 +68,7 @@ def check_fib_confluence(fib_analysis: Dict) -> Dict:
     }
 
 
-def check_liquidity_swept(liquidity_sweep: Dict, direction: str) -> Dict:
+def check_liquidity_swept(liquidity_sweep: Dict[str, Any], direction: str) -> Dict[str, Any]:
     """Check if liquidity has been swept."""
     if direction == "LONG":
         swept = liquidity_sweep.get('eql_swept', False)
@@ -82,11 +82,11 @@ def check_liquidity_swept(liquidity_sweep: Dict, direction: str) -> Dict:
     }
 
 
-def check_rsi_confluence(rsi: float, direction: str, divergence: Dict = None) -> Dict:
+def check_rsi_confluence(rsi: float, direction: str, divergence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Check RSI conditions."""
     has_confluence = False
     detail = f"RSI: {rsi:.1f}"
-    
+
     if direction == "LONG":
         if rsi < 40 or (divergence and 'BULLISH' in divergence.get('type', '')):
             has_confluence = True
@@ -95,7 +95,7 @@ def check_rsi_confluence(rsi: float, direction: str, divergence: Dict = None) ->
         if rsi > 60 or (divergence and 'BEARISH' in divergence.get('type', '')):
             has_confluence = True
             detail += " (Overbought/Divergence)"
-    
+
     return {
         'factor': 'RSI_CONFLUENCE',
         'status': has_confluence,
@@ -104,17 +104,17 @@ def check_rsi_confluence(rsi: float, direction: str, divergence: Dict = None) ->
     }
 
 
-def check_macd_confluence(macd_hist: float, prev_macd_hist: float, direction: str, divergence: Dict = None) -> Dict:
+def check_macd_confluence(macd_hist: float, prev_macd_hist: float, direction: str, divergence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Check MACD conditions."""
     has_confluence = False
-    
+
     if direction == "LONG":
         if macd_hist > prev_macd_hist or (divergence and 'BULLISH' in divergence.get('type', '')):
             has_confluence = True
     else:
         if macd_hist < prev_macd_hist or (divergence and 'BEARISH' in divergence.get('type', '')):
             has_confluence = True
-    
+
     return {
         'factor': 'MACD_CONFLUENCE',
         'status': has_confluence,
@@ -123,16 +123,16 @@ def check_macd_confluence(macd_hist: float, prev_macd_hist: float, direction: st
     }
 
 
-def check_amd_session() -> Dict:
+def check_amd_session() -> Dict[str, Any]:
     """Check if in optimal trading session."""
     taipei_tz = ZoneInfo("Asia/Taipei")
     now = datetime.now(taipei_tz)
     hour = now.hour
-    
+
     # London (15-00) or NY (21-06) or Overlap (21-00)
     in_killzone = (15 <= hour < 24) or (0 <= hour < 6)
     session = "London" if 15 <= hour < 21 else ("NY" if 21 <= hour or hour < 6 else "Asia")
-    
+
     return {
         'factor': 'AMD_SESSION_ALIGNED',
         'status': in_killzone,
@@ -141,10 +141,10 @@ def check_amd_session() -> Dict:
     }
 
 
-def check_asia_range_sweep(current_price: float, ash: float, asl: float, direction: str) -> Dict:
+def check_asia_range_sweep(current_price: float, ash: float, asl: float, direction: str) -> Dict[str, Any]:
     """Check if Asia range has been swept."""
     swept = False
-    
+
     if ash and asl:
         if direction == "LONG" and current_price > asl:
             # Price was below ASL and came back up
@@ -152,7 +152,7 @@ def check_asia_range_sweep(current_price: float, ash: float, asl: float, directi
         elif direction == "SHORT" and current_price < ash:
             # Price was above ASH and came back down
             swept = True
-    
+
     return {
         'factor': 'ASIA_RANGE_SWEEP',
         'status': swept,
@@ -164,21 +164,21 @@ def check_asia_range_sweep(current_price: float, ash: float, asl: float, directi
 def calculate_confidence_score(
     direction: str,
     htf_bias: str,
-    poi: Dict,
-    fib_analysis: Dict,
-    liquidity_sweep: Dict,
+    poi: Optional[Dict[str, Any]],
+    fib_analysis: Dict[str, Any],
+    liquidity_sweep: Dict[str, Any],
     rsi: float,
     macd_hist: float,
     prev_macd_hist: float,
-    ash: float = None,
-    asl: float = None,
-    current_price: float = None,
-    rsi_divergence: Dict = None,
-    macd_divergence: Dict = None
-) -> Dict:
+    ash: Optional[float] = None,
+    asl: Optional[float] = None,
+    current_price: Optional[float] = None,
+    rsi_divergence: Optional[Dict[str, Any]] = None,
+    macd_divergence: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Calculate the 8-factor confidence score."""
     factors = []
-    
+
     factors.append(check_htf_bias(htf_bias, direction))
     factors.append(check_smc_poi(poi))
     factors.append(check_fib_confluence(fib_analysis))
@@ -187,10 +187,10 @@ def calculate_confidence_score(
     factors.append(check_macd_confluence(macd_hist, prev_macd_hist, direction, macd_divergence))
     factors.append(check_amd_session())
     factors.append(check_asia_range_sweep(current_price or 0, ash or 0, asl or 0, direction))
-    
+
     total_score = sum(f['score'] for f in factors)
     rating, description = SCORE_RATINGS.get(total_score, ("F", "Insufficient confluence. DO NOT TRADE."))
-    
+
     return {
         'score': total_score,
         'max_score': 8,
@@ -201,7 +201,7 @@ def calculate_confidence_score(
     }
 
 
-def get_position_recommendation(score: int) -> Dict:
+def get_position_recommendation(score: int) -> Dict[str, Any]:
     """Get position sizing recommendation based on score."""
     if score >= 7:
         return {'action': 'TRADE', 'risk': '1%', 'leverage': 10}
@@ -213,7 +213,7 @@ def get_position_recommendation(score: int) -> Dict:
         return {'action': 'SKIP', 'risk': '0%', 'leverage': 0}
 
 
-def format_confidence_score(result: Dict) -> str:
+def format_confidence_score(result: Dict[str, Any]) -> str:
     """Format confidence score for display."""
     stars = "⭐" * min(result['score'], 5)
     lines = [

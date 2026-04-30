@@ -111,14 +111,14 @@ class SessionStateRepo:
     def __init__(self, engine: sa.Engine) -> None:
         self._engine = engine
 
-    def get(self, d) -> tuple[int, float]:
+    def get(self, d: object) -> tuple[int, float]:
         with self._engine.connect() as conn:
             row = conn.execute(sa.text(
                 "SELECT consecutive_wins, day_pnl_r FROM session_state WHERE date=:d"
             ), {"d": d}).first()
         return (row[0], row[1]) if row else (0, 0.0)
 
-    def upsert(self, d, consecutive_wins: int, day_pnl_r: float) -> None:
+    def upsert(self, d: object, consecutive_wins: int, day_pnl_r: float) -> None:
         with self._engine.begin() as conn:
             conn.execute(sa.text(
                 "INSERT INTO session_state (date, consecutive_wins, day_pnl_r, last_update_ts) "

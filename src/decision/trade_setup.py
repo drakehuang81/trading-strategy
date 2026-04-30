@@ -4,7 +4,7 @@ Trade Setup Calculation Module
 Calculates Entry, Stop Loss, and Take Profit levels.
 """
 
-from typing import Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional
 
 
 def calculate_trade_setup(
@@ -14,8 +14,8 @@ def calculate_trade_setup(
     swing_high: float,
     account_balance: float = 10000,
     risk_percent: float = 0.01,
-    leverage: int = 5
-) -> Dict:
+    leverage: int = 5,
+) -> Dict[str, Any]:
     """
     Calculate complete trade setup with Entry, SL, and TPs.
     
@@ -65,7 +65,7 @@ def calculate_trade_setup(
     }
 
 
-def format_trade_setup(setup: Dict, symbol: str = "COIN/USDT") -> str:
+def format_trade_setup(setup: Dict[str, Any], symbol: str = "COIN/USDT") -> str:
     """Format trade setup for display."""
     direction = setup['direction']
     emoji = "🟢" if direction == "LONG" else "🔴"

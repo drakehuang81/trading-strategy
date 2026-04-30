@@ -48,9 +48,9 @@ class TelegramBot:
         self._scan_fn = scan_fn
         self._broker = broker
         self._engine = engine
-        self._app: Application | None = None
+        self._app: Any = None  # telegram.ext.Application
 
-    def build(self) -> Application:
+    def build(self) -> Any:  # telegram.ext.Application
         """Build the Application with handlers. Call before start()."""
         self._app = (
             Application.builder()
@@ -72,12 +72,12 @@ class TelegramBot:
         assert self._app is not None
         await self._app.initialize()
         await self._app.start()
-        await self._app.updater.start_polling(stop_signals=None)  # type: ignore[union-attr]
+        await self._app.updater.start_polling(stop_signals=None)
         log.info("telegram_bot_started")
 
     async def stop(self) -> None:
         if self._app is not None:
-            await self._app.updater.stop()  # type: ignore[union-attr]
+            await self._app.updater.stop()
             await self._app.stop()
             await self._app.shutdown()
             log.info("telegram_bot_stopped")

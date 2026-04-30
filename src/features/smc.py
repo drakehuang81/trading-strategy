@@ -9,7 +9,7 @@ Implements SMC structure identification including:
 - Fair Value Gaps (FVG)
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 import pandas as pd
 import numpy as np
 
@@ -17,7 +17,7 @@ import numpy as np
 def find_swing_points(
     df: pd.DataFrame,
     window: int = 5
-) -> Tuple[List[Dict], List[Dict]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Identify Swing Highs and Swing Lows in price data.
     
@@ -76,10 +76,10 @@ def find_swing_points(
 
 def identify_structure(
     df: pd.DataFrame,
-    swing_highs: List[Dict] = None,
-    swing_lows: List[Dict] = None,
+    swing_highs: Optional[List[Dict[str, Any]]] = None,
+    swing_lows: Optional[List[Dict[str, Any]]] = None,
     window: int = 5
-) -> Dict:
+) -> Dict[str, Any]:
     """
     Identify market structure including BOS and CHoCH.
     
@@ -116,7 +116,7 @@ def identify_structure(
     if swing_highs is None or swing_lows is None:
         swing_highs, swing_lows = find_swing_points(df, window)
     
-    result = {
+    result: Dict[str, Any] = {
         'structure': 'RANGING',
         'swing_highs': swing_highs,
         'swing_lows': swing_lows,
@@ -226,7 +226,7 @@ def find_order_blocks(
     df: pd.DataFrame,
     lookback: int = 50,
     min_move_pct: float = 0.5
-) -> Dict[str, List[Dict]]:
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Identify Order Blocks (OB) in price data.
     
@@ -302,7 +302,7 @@ def find_fvg(
     df: pd.DataFrame,
     lookback: int = 50,
     min_gap_pct: float = 0.1
-) -> Dict[str, List[Dict]]:
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Identify Fair Value Gaps (FVG) / Imbalances in price data.
     
@@ -387,7 +387,7 @@ def get_nearest_poi(
     df: pd.DataFrame,
     direction: str,
     window: int = 5
-) -> Optional[Dict]:
+) -> Optional[Dict[str, Any]]:
     """
     Get the nearest Point of Interest (POI) for entry.
     

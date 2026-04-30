@@ -13,7 +13,7 @@ Key Levels:
 - 0.786: Deep retracement
 """
 
-from typing import Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional
 import pandas as pd
 
 # Fibonacci level definitions
@@ -34,7 +34,7 @@ OTE_LOWER = 0.786
 def calculate_fib_levels(
     swing_high: float,
     swing_low: float,
-    direction: str = "bullish"
+    direction: str = "bullish",
 ) -> Dict[str, float]:
     """
     Calculate Fibonacci retracement levels.
@@ -128,8 +128,8 @@ def get_premium_discount_zone(
 def identify_fib_confluence(
     current_price: float,
     levels: Dict[str, float],
-    tolerance: float = 0.003
-) -> Dict:
+    tolerance: float = 0.003,
+) -> Dict[str, Any]:
     """
     Check if current price is at a significant Fibonacci level.
     
@@ -145,7 +145,7 @@ def identify_fib_confluence(
         - distance_pct: Distance from the level as percentage
         - is_ote: Boolean if price is in OTE zone
     """
-    result = {
+    result: Dict[str, Any] = {
         'is_at_fib': False,
         'level': None,
         'level_price': None,
@@ -184,8 +184,8 @@ def identify_fib_confluence(
 def calculate_fib_from_df(
     df: pd.DataFrame,
     lookback: int = 50,
-    direction: str = "auto"
-) -> Dict:
+    direction: str = "auto",
+) -> Dict[str, Any]:
     """
     Calculate Fibonacci levels from a DataFrame.
     

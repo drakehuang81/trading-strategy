@@ -13,7 +13,7 @@ Then computes Sharpe + Deflated Sharpe over per-bar returns.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -96,7 +96,7 @@ class BacktestRunner:
             proposal = await policy.propose(feats, bundle, portfolio)
             if proposal is None:
                 continue
-            side = "buy" if proposal.direction == "long" else "sell"
+            side: Literal["buy", "sell"] = "buy" if proposal.direction == "long" else "sell"
             order = Order(
                 client_order_id=proposal.proposal_id,
                 symbol=self.symbol,

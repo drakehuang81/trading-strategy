@@ -10,7 +10,7 @@ Funding Rate thresholds:
 - EXTREME:  Beyond ±0.1%      → Skip trade
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from binance.client import Client
 import os
 
@@ -39,7 +39,7 @@ def get_binance_futures_client() -> Client:
     return Client()
 
 
-def fetch_funding_rate(symbol: str = "BTCUSDT") -> Dict:
+def fetch_funding_rate(symbol: str = "BTCUSDT") -> Dict[str, Any]:
     """
     Fetch current funding rate from Binance Futures API.
     
@@ -78,7 +78,7 @@ def fetch_funding_rate(symbol: str = "BTCUSDT") -> Dict:
         }
 
 
-def evaluate_funding_rate(rate: Optional[float]) -> Dict:
+def evaluate_funding_rate(rate: Optional[float]) -> Dict[str, Any]:
     """
     Evaluate funding rate and return risk classification.
     
@@ -125,7 +125,7 @@ def evaluate_funding_rate(rate: Optional[float]) -> Dict:
     }
 
 
-def get_position_adjustment(rate: Optional[float], direction: str) -> Dict:
+def get_position_adjustment(rate: Optional[float], direction: str) -> Dict[str, Any]:
     """
     Get position sizing adjustment based on funding rate and trade direction.
     
@@ -172,7 +172,7 @@ def get_position_adjustment(rate: Optional[float], direction: str) -> Dict:
     }
 
 
-def format_funding_rate_filter(funding_data: Dict, evaluation: Dict = None) -> str:
+def format_funding_rate_filter(funding_data: Dict[str, Any], evaluation: Optional[Dict[str, Any]] = None) -> str:
     """
     Format funding rate filter for display in report.
     

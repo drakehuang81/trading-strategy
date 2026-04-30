@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from features.registry import canonical_hash, flatten_features
 from models.base import PredictionBundle
@@ -51,7 +51,7 @@ class XGBPredictor:
 
     async def predict(self, features: dict[str, Any]) -> PredictionBundle:
         prob_up = self._fixed_prob if self._fixed_prob is not None else self._run_model(features)
-        direction = "long" if prob_up > 0.52 else ("short" if prob_up < 0.48 else "flat")
+        direction: Literal["long", "short", "flat"] = "long" if prob_up > 0.52 else ("short" if prob_up < 0.48 else "flat")
         return PredictionBundle(
             direction=direction,
             prob_up=float(prob_up),

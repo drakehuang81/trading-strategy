@@ -30,6 +30,7 @@ negative (model worse than expected-best-of-N null).
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 from scipy.stats import skew as scipy_skew, kurtosis as scipy_kurt
@@ -41,7 +42,7 @@ PERIODS_PER_YEAR_1H = 24 * 365   # 8760
 PERIODS_PER_YEAR_DAILY = 252
 
 
-def sharpe_ratio(returns: np.ndarray | list[float],
+def sharpe_ratio(returns: np.ndarray[Any, np.dtype[Any]] | list[float],
                  periods_per_year: int) -> float:
     """Annualised Sharpe ratio. Returns NaN on degenerate input."""
     arr = np.asarray(returns, dtype=float)
@@ -66,7 +67,7 @@ def _expected_max_sharpe_under_null(n_trials: int) -> float:
     return z_high - EULER_GAMMA / z_high
 
 
-def deflated_sharpe_ratio(returns: np.ndarray | list[float],
+def deflated_sharpe_ratio(returns: np.ndarray[Any, np.dtype[Any]] | list[float],
                           n_trials: int,
                           periods_per_year: int) -> float:
     """Probability-of-skill score under selection bias.

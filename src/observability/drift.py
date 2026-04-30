@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 
-def compute_psi(reference: np.ndarray, test: np.ndarray, n_bins: int = 10) -> float:
+def compute_psi(reference: np.ndarray[Any, np.dtype[Any]], test: np.ndarray[Any, np.dtype[Any]], n_bins: int = 10) -> float:
     """Population Stability Index between reference and test arrays.
 
     PSI = Σ (P_i - Q_i) * ln(P_i / Q_i)
@@ -30,7 +30,7 @@ def compute_psi(reference: np.ndarray, test: np.ndarray, n_bins: int = 10) -> fl
     return psi
 
 
-def compute_ks(reference: np.ndarray, test: np.ndarray) -> float:
+def compute_ks(reference: np.ndarray[Any, np.dtype[Any]], test: np.ndarray[Any, np.dtype[Any]]) -> float:
     """Kolmogorov-Smirnov statistic: max |F_ref(x) - F_test(x)|."""
     combined = np.sort(np.concatenate([reference, test]))
     n_ref = len(reference)
@@ -47,12 +47,12 @@ class FeatureDriftMonitor:
 
     Produces a list of breach records. Use has_breach() for a boolean gate.
     """
-    reference: dict[str, np.ndarray]
+    reference: dict[str, np.ndarray[Any, np.dtype[Any]]]
     psi_threshold: float = 0.25
     ks_threshold: float = 0.10
     n_bins: int = 10
 
-    def check(self, test: dict[str, np.ndarray]) -> list[dict[str, Any]]:
+    def check(self, test: dict[str, np.ndarray[Any, np.dtype[Any]]]) -> list[dict[str, Any]]:
         """Return list of breach dicts: {feature, metric, value, threshold}."""
         breaches: list[dict[str, Any]] = []
         for name, ref_vals in self.reference.items():
@@ -73,5 +73,5 @@ class FeatureDriftMonitor:
                 })
         return breaches
 
-    def has_breach(self, test: dict[str, np.ndarray]) -> bool:
+    def has_breach(self, test: dict[str, np.ndarray[Any, np.dtype[Any]]]) -> bool:
         return len(self.check(test)) > 0

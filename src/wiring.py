@@ -9,6 +9,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 import structlog
@@ -98,6 +99,7 @@ async def build_scan_context(
     spread_provider = cache_backed_spread_bps_provider(cache, fallback=0.0)
 
     rng = random.Random(cfg.paper_broker_seed)
+    broker: Any
     if cfg.broker_kind == "paper":
         broker = PaperBroker(
             cfg=PaperBrokerConfig(),
@@ -127,6 +129,7 @@ async def build_scan_context(
             BacktestDSRGate,
             CalibrationBrierGate,
             DriftStabilityGate,
+            Gate,
             GateContext,
             HaltDiversityGate,
             NoRepaintingGate,
@@ -142,7 +145,9 @@ async def build_scan_context(
             watchdog_log_path="data/watchdog_pings.log",
             model_dir=cfg.model_dir,
         )
-        gates = [
+        # Each concrete gate satisfies the Gate Protocol at runtime.
+        # mypy can't verify class-var `name` is settable so we cast.
+        _gate_list = [
             NoRepaintingGate(),
             BacktestDSRGate(),
             CalibrationBrierGate(),
@@ -152,6 +157,8 @@ async def build_scan_context(
             WatchdogUptimeGate(),
             HaltDiversityGate(),
         ]
+        from typing import cast as _cast
+        gates: list[Gate] = _cast(list[Gate], _gate_list)
         results = run_all_gates(gates, gate_ctx)
         failed = [r.name for r in results if not r.passed]
         if failed:
@@ -196,11 +203,12 @@ async def build_scan_context(
     )
 
     drift_cfg = load_drift_config(cfg.drift_yaml)
-    reference: dict[str, list[float]] = {}
+    reference: dict[str, Any] = {}
     drift_ref_path = Path(cfg.drift_reference_path)
     if drift_ref_path.exists():
         import json as _json
-        reference = _json.loads(drift_ref_path.read_text())
+        raw_ref: dict[str, list[float]] = _json.loads(drift_ref_path.read_text())
+        reference = {k: np.array(v, dtype=float) for k, v in raw_ref.items()}
 
     drift_monitor = FeatureDriftMonitor(
         reference=reference,

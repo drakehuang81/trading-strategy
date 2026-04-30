@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal, cast
 
 import structlog
 
@@ -32,7 +32,7 @@ class ScanContext:
     policy: Any                     # Policy
     risk: RiskPipeline | Any
     sizer: Any                      # FixedFractionalSizer
-    broker: Broker | Any
+    broker: Any  # Broker Protocol + BrokerEventStream — kept as Any for flexibility
     proposal_repo: ProposalRepo
     event_repo: BrokerEventRepo
     session_repo: SessionStateRepo
@@ -145,7 +145,7 @@ async def _scan_symbol(
     ctx.proposal_repo.insert(proposal, accepted=True)
 
     # 10. Submit order
-    side = "buy" if proposal.direction == "long" else "sell"
+    side: Literal["buy", "sell"] = "buy" if proposal.direction == "long" else "sell"
     order_id = await ctx.broker.submit(Order(
         client_order_id=proposal.proposal_id,
         symbol=proposal.symbol,
@@ -167,4 +167,4 @@ async def _scan_symbol(
         except Exception:
             log.warning("telegram_notify_failed", symbol=symbol)
 
-    return proposal
+    return cast(TradeProposal, proposal)

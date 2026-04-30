@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from models.xgb_predictor import XGBPredictor
 
@@ -51,5 +52,5 @@ def load_latest_model(model_dir: Path) -> XGBPredictor:
     return XGBPredictor.load(str(latest.booster_path), str(latest.calib_path))
 
 
-def load_meta(bundle: BundleHandle) -> dict:
-    return json.loads(bundle.meta_path.read_text())
+def load_meta(bundle: BundleHandle) -> dict[str, Any]:
+    return dict(json.loads(bundle.meta_path.read_text()))

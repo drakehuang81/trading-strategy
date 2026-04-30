@@ -18,7 +18,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal, cast
 
 import pandas as pd
 
@@ -35,7 +35,7 @@ class ReplayBroker:
     funding: pd.DataFrame | None = None
     initial_equity_usdt: float = 10_000.0
     _current_ts: pd.Timestamp | None = None
-    _queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _queue: asyncio.Queue[BrokerEvent] = field(default_factory=asyncio.Queue)
     _orders: dict[OrderId, Order] = field(default_factory=dict)
     _positions: dict[str, Position] = field(default_factory=dict)
     _equity_usdt: float = 0.0
@@ -53,7 +53,7 @@ class ReplayBroker:
                 & (self.funding.index <= new_ts)
             ]
             for ts_funding, row in window.iterrows():
-                self._charge_funding(ts_funding, float(row["funding_rate"]))
+                self._charge_funding(cast(pd.Timestamp, ts_funding), float(row["funding_rate"]))
         self._current_ts = new_ts
 
     async def submit(self, order: Order) -> OrderId:
@@ -133,12 +133,14 @@ class ReplayBroker:
 
     def _update_position(self, symbol: str, signed_qty: float,
                          fill_price: float) -> None:
+        assert self._current_ts is not None, "set_time must be called before _update_position"
+        current_dt = self._current_ts.to_pydatetime()
         existing = self._positions.get(symbol)
         if existing is None:
             self._positions[symbol] = Position(
                 symbol=symbol, qty=signed_qty, avg_entry=fill_price,
-                opened_at=self._current_ts.to_pydatetime(),
-                last_update_ts=self._current_ts.to_pydatetime(),
+                opened_at=current_dt,
+                last_update_ts=current_dt,
             )
             return
         new_qty = existing.qty + signed_qty
@@ -159,7 +161,7 @@ class ReplayBroker:
         self._positions[symbol] = existing.model_copy(update={
             "qty": new_qty,
             "avg_entry": new_avg,
-            "last_update_ts": self._current_ts.to_pydatetime(),
+            "last_update_ts": current_dt,
         })
 
     def _charge_funding(self, ts: pd.Timestamp, rate: float) -> None:
@@ -175,9 +177,16 @@ class ReplayBroker:
                 fee=fee, reason=f"rate={rate}",
             ))
 
-    async def _emit(self, kind: str, order_id: OrderId, order: Order | None,
-                    *, price: float | None = None, qty: float | None = None,
-                    reason: str | None = None) -> None:
+    async def _emit(
+        self,
+        kind: Literal["submitted", "partially_filled", "filled", "rejected", "cancelled", "funding_charged"],
+        order_id: OrderId,
+        order: Order | None,
+        *,
+        price: float | None = None,
+        qty: float | None = None,
+        reason: str | None = None,
+    ) -> None:
         fee = None
         if price is not None and qty is not None:
             fee = taker_or_maker_fee(

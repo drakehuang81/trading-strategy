@@ -240,7 +240,7 @@ class Orchestrator:
                 # TODO(plan-5): build `test` from the rolling feature buffer.
                 # Until then, `has_breach` is intentionally skipped so the
                 # loop cannot raise a halt from empty data.
-                test: dict[str, np.ndarray] = {}
+                test: dict[str, np.ndarray[Any, np.dtype[Any]]] = {}
                 breached = monitor.has_breach(test) if test else False
                 state["breached"] = breached
                 if breached:
@@ -284,7 +284,9 @@ class Orchestrator:
             except Exception:
                 log.warning("kline_refresh_failed", symbol=symbol, exc_info=True)
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=60.0)  # type: ignore[arg-type]
+                if self._stop_event is None:
+                    return
+                await asyncio.wait_for(self._stop_event.wait(), timeout=60.0)
             except asyncio.TimeoutError:
                 continue
             return

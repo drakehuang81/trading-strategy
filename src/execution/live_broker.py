@@ -45,4 +45,4 @@ class LiveBroker:
     async def events(self) -> AsyncIterator[BrokerEvent]:
         # Empty stream — never yields. Caller must handle this.
         if False:
-            yield   # type: ignore[unreachable]
+            yield
