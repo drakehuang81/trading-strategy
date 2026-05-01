@@ -2,7 +2,9 @@
 
 Commands: /positions, /status, /halt, /resume, /analyze [symbol]
 Free-text → ChatLLM.converse()
-stop_signals=None avoids signal handler collision with APScheduler.
+Uses split lifecycle (initialize/start/start_polling separately, not
+Application.run_polling) so PTB never installs its own signal handlers
+— Orchestrator's TaskGroup owns shutdown.
 """
 from __future__ import annotations
 
@@ -66,13 +68,18 @@ class TelegramBot:
         return self._app
 
     async def start(self) -> None:
-        """Initialize and start polling. Use stop_signals=None for TaskGroup compat."""
+        """Initialize and start polling.
+
+        Split lifecycle (no Application.run_polling) means PTB does not
+        install its own SIGINT/SIGTERM handlers — Orchestrator's
+        TaskGroup owns shutdown via its own signal handlers.
+        """
         if self._app is None:
             self.build()
         assert self._app is not None
         await self._app.initialize()
         await self._app.start()
-        await self._app.updater.start_polling(stop_signals=None)
+        await self._app.updater.start_polling()
         log.info("telegram_bot_started")
 
     async def stop(self) -> None:
