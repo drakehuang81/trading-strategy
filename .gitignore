@@ -3,8 +3,22 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
-data/
+/data/
 *.csv
+!tests/fixtures/*.csv
 *.log
 .superpowers/
 .worktrees/
+/models/
+!/models/.gitkeep
+
+# Plan 5A: training artefacts
+data/history/*.parquet
+data/funding/*.parquet
+data/training/*.parquet
+models/xgb_*.json
+models/calib_*.pkl
+models/drift_reference.json
+!data/history/.gitkeep
+!data/funding/.gitkeep
+!data/training/.gitkeep
