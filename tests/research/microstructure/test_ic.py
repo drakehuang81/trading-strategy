@@ -24,3 +24,16 @@ def test_quantile_layering_is_monotone_for_real_signal():
     buckets = quantile_layering(df, signal_col="qi", horizon_col="fwd_1s", n_buckets=5)
     means = buckets["mean_fwd"].to_list()
     assert means == sorted(means)  # monotone increasing
+
+
+def test_quantile_layering_monotone_at_double_digit_buckets():
+    # regression: bucket labels must sort numerically, not lexically, at n >= 10
+    # (plain str labels put "10" before "2" -> false non-monotone)
+    n = 5000
+    rng = np.random.default_rng(1)
+    sig = rng.normal(size=n)
+    fwd = sig * 0.5 + rng.normal(scale=0.1, size=n)
+    df = pl.DataFrame({"qi": sig, "fwd_1s": fwd})
+    buckets = quantile_layering(df, signal_col="qi", horizon_col="fwd_1s", n_buckets=15)
+    means = buckets["mean_fwd"].to_list()
+    assert means == sorted(means)

@@ -26,11 +26,17 @@ def compute_ic(
 def quantile_layering(
     df: pl.DataFrame, *, signal_col: str, horizon_col: str, n_buckets: int = 5
 ) -> pl.DataFrame:
-    """Mean forward return per signal quantile bucket (ascending by signal)."""
+    """Mean forward return per signal quantile bucket (ascending by signal).
+
+    Bucket labels are zero-padded (e.g. "00".."14") so the final lexical sort
+    matches numeric bucket order even at n_buckets >= 10 (plain "10" would
+    otherwise sort before "2" and break the monotonicity check).
+    """
     pair = df.select([signal_col, horizon_col]).drop_nulls()
+    width = len(str(n_buckets - 1))
+    labels = [str(i).zfill(width) for i in range(n_buckets)]
     pair = pair.with_columns(
-        pl.col(signal_col).qcut(n_buckets, labels=[str(i) for i in range(n_buckets)])
-        .alias("bucket")
+        pl.col(signal_col).qcut(n_buckets, labels=labels).alias("bucket")
     )
     return (
         pair.group_by("bucket")
