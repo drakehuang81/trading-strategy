@@ -42,3 +42,27 @@ def depth_imbalance(book_depth: pl.DataFrame) -> pl.DataFrame:
         .alias("depth_imbalance")
     )
     return g.select(["ts", di]).sort("ts")
+
+
+def book_slope(
+    book_depth: pl.DataFrame, *, near_max: float = 1.0, far_min: float = 3.0
+) -> pl.DataFrame:
+    """Liquidity concentration: log(far_depth / near_depth) per snapshot.
+
+    near = sum(depth where |percentage| <= near_max),
+    far  = sum(depth where |percentage| >= far_min).
+    Positive slope = depth concentrated away from mid. Null if either is 0.
+    Input: ts, percentage, depth. Output: ts, book_slope.
+    """
+    absp = pl.col("percentage").abs()
+    g = book_depth.group_by("ts").agg(
+        pl.col("depth").filter(absp <= near_max).sum().alias("near"),
+        pl.col("depth").filter(absp >= far_min).sum().alias("far"),
+    )
+    slope = (
+        pl.when((pl.col("near") > 0) & (pl.col("far") > 0))
+        .then((pl.col("far") / pl.col("near")).log())
+        .otherwise(None)
+        .alias("book_slope")
+    )
+    return g.select(["ts", slope]).sort("ts")

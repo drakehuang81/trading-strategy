@@ -67,3 +67,17 @@ def test_depth_imbalance_zero_total_is_null():
     book = _depth([(t, -1.0, 0.0), (t, 1.0, 0.0)])
     di = depth_imbalance(book)
     assert di["depth_imbalance"][0] is None
+
+
+def test_book_slope_log_far_near_ratio():
+    from research.microstructure.signals import book_slope
+    t = dt.datetime(2026, 1, 1, 0, 0, 0)
+    # near (|pct| <= 1) total depth = 10+10 = 20; far (|pct| >= 3) = 40+40 = 80
+    book = _depth([
+        (t, -1.0, 10.0), (t, 1.0, 10.0),
+        (t, -3.0, 40.0), (t, 3.0, 40.0),
+    ])
+    bs = book_slope(book)
+    # log(80 / 20) = log(4)
+    import math
+    assert abs(bs["book_slope"][0] - math.log(4.0)) < 1e-9
