@@ -66,3 +66,17 @@ def load_book_ticker(parquet_path: Path) -> pl.DataFrame:
         pl.from_epoch(pl.col(BOOK_TICKER_TS_COL), time_unit="ms").alias("ts")
     )
     return df.select(["ts", "bid_price", "bid_qty", "ask_price", "ask_qty"])
+
+
+def load_book_depth(parquet_path: Path) -> pl.DataFrame:
+    """Load + normalize a bookDepth parquet (long form: one row per level).
+
+    Output: ts(Datetime), percentage, depth, notional. Timestamp is parsed
+    from the raw "YYYY-MM-DD HH:MM:SS" string. 12 symmetric percentage levels
+    (+/-0.2/1/2/3/4/5) share each ts.
+    """
+    df = pl.read_parquet(parquet_path)
+    df = df.with_columns(
+        pl.col("timestamp").str.to_datetime(strict=False).alias("ts")
+    )
+    return df.select(["ts", "percentage", "depth", "notional"])

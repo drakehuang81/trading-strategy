@@ -52,3 +52,19 @@ def test_load_book_ticker_normalizes_columns(tmp_path: Path):
     assert df.columns == ["ts", "bid_price", "bid_qty", "ask_price", "ask_qty"]
     assert df["bid_price"][0] == 100.0
     assert df["ts"].dtype == pl.Datetime
+
+
+def test_load_book_depth_normalizes(tmp_path: Path):
+    raw = pl.DataFrame({
+        "timestamp": ["2026-06-01 00:00:07", "2026-06-01 00:00:07"],
+        "percentage": [-1.0, 1.0],
+        "depth": [42881.4, 28062.9],
+        "notional": [8.5e7, 5.6e7],
+    })
+    p = tmp_path / "bd.parquet"
+    raw.write_parquet(p)
+    from research.microstructure.download import load_book_depth
+    df = load_book_depth(p)
+    assert df.columns == ["ts", "percentage", "depth", "notional"]
+    assert df["ts"].dtype == pl.Datetime
+    assert df.height == 2
