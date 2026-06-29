@@ -66,3 +66,47 @@ def book_slope(
         .alias("book_slope")
     )
     return g.select(["ts", slope]).sort("ts")
+
+
+def ofi(book: pl.DataFrame, *, window: int = 50) -> pl.DataFrame:
+    """Order Flow Imbalance (Cont, Kukanov & Stoikov 2014) from best bid/ask.
+
+    Per update n (vs n-1):
+      bid term  = bid_qty_n                if bid_price_n  > bid_price_{n-1}
+                  bid_qty_n - bid_qty_{n-1} if equal
+                  -bid_qty_{n-1}           if bid_price_n  < bid_price_{n-1}
+      ask term  = -ask_qty_n               if ask_price_n  > ask_price_{n-1}
+                  ask_qty_n - ask_qty_{n-1} if equal
+                  ask_qty_{n-1}            if ask_price_n  < ask_price_{n-1}
+      e_n = bid term + ask term
+    ofi = rolling_sum(e_n, window). First row is null (no previous update).
+    Input: ts, bid_price, bid_qty, ask_price, ask_qty. Output: ts, ofi.
+    """
+    b = book.sort("ts")
+    pbid, qbid = pl.col("bid_price"), pl.col("bid_qty")
+    pask, qask = pl.col("ask_price"), pl.col("ask_qty")
+    pbid0, qbid0 = pbid.shift(1), qbid.shift(1)
+    pask0, qask0 = pask.shift(1), qask.shift(1)
+
+    bid_term = (
+        pl.when(pbid > pbid0).then(qbid)
+        .when(pbid == pbid0).then(qbid - qbid0)
+        .otherwise(-qbid0)
+    )
+    ask_term = (
+        pl.when(pask > pask0).then(-qask)
+        .when(pask == pask0).then(qask - qask0)
+        .otherwise(qask0)
+    )
+    b = b.with_columns((bid_term + ask_term).alias("_e"))
+    # rolling_sum over a window containing nulls can return null; fill the
+    # per-update term with 0 for the sum, but keep the first row's ofi null
+    # (no previous update exists there).
+    b = b.with_columns(pl.col("_e").fill_null(0.0).alias("_e_filled"))
+    out = b.with_columns(
+        pl.col("_e_filled").rolling_sum(window_size=window, min_samples=1).alias("ofi")
+    )
+    out = out.with_columns(
+        pl.when(pl.col("_e").is_null()).then(None).otherwise(pl.col("ofi")).alias("ofi")
+    )
+    return out.select(["ts", "ofi"])

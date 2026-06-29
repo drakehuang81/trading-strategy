@@ -81,3 +81,18 @@ def test_book_slope_log_far_near_ratio():
     # log(80 / 20) = log(4)
     import math
     assert abs(bs["book_slope"][0] - math.log(4.0)) < 1e-9
+
+
+def test_ofi_cont_contributions():
+    from research.microstructure.signals import ofi
+    # rows: (bid_price, bid_qty, ask_price, ask_qty)
+    book = _book([
+        (100.0, 5.0, 100.5, 5.0),   # t0 baseline
+        (100.0, 8.0, 100.5, 5.0),   # bid_qty up, bid_price same -> +3 bid contrib
+        (101.0, 2.0, 101.5, 4.0),   # bid_price up -> +bid_qty(2); ask_price up -> +prev ask_qty(5)
+    ])
+    out = ofi(book, window=10)
+    assert "ofi" in out.columns
+    assert out["ofi"][0] is None   # first row: no previous update
+    # e_1 = +3 (bid up by 3, ask unchanged contributes 0)
+    assert abs(out["ofi"][1] - 3.0) < 1e-9
