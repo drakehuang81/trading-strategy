@@ -18,8 +18,16 @@ def summarize_schema(df: pl.DataFrame, *, ts_col: str) -> dict[str, Any]:
         "dtypes": {c: str(t) for c, t in zip(df.columns, df.dtypes)},
     }
     if ts_col in df.columns and df.height > 1:
-        gaps = df[ts_col].sort().diff().drop_nulls()
-        summary["median_gap_ms"] = int(gaps.median())
+        col = df[ts_col]
+        if col.dtype == pl.String:
+            # bookDepth ships ts as "YYYY-MM-DD HH:MM:SS" — parse to datetime
+            col = col.str.to_datetime(strict=False)
+        if col.dtype.is_temporal():
+            gaps_ms = col.sort().diff().drop_nulls().dt.total_milliseconds()
+            summary["median_gap_ms"] = int(gaps_ms.median())
+        else:
+            gaps = col.sort().diff().drop_nulls()
+            summary["median_gap_ms"] = int(gaps.median())
     else:
         summary["median_gap_ms"] = None
     if "percentage" in df.columns:
