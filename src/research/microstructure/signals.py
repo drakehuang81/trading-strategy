@@ -21,3 +21,24 @@ def queue_imbalance(book: pl.DataFrame) -> pl.DataFrame:
         .alias("qi")
     )
     return book.select(["ts", qi])
+
+
+def depth_imbalance(book_depth: pl.DataFrame) -> pl.DataFrame:
+    """Per-snapshot depth imbalance from percentage-distance depth.
+
+    bid = sum(depth where percentage < 0), ask = sum(depth where percentage > 0).
+    DI = (bid - ask) / (bid + ask); null when total is zero.
+    Input: ts, percentage, depth (long form). Output: ts, depth_imbalance.
+    """
+    g = book_depth.group_by("ts").agg(
+        pl.col("depth").filter(pl.col("percentage") < 0).sum().alias("bid"),
+        pl.col("depth").filter(pl.col("percentage") > 0).sum().alias("ask"),
+    )
+    total = pl.col("bid") + pl.col("ask")
+    di = (
+        pl.when(total > 0)
+        .then((pl.col("bid") - pl.col("ask")) / total)
+        .otherwise(None)
+        .alias("depth_imbalance")
+    )
+    return g.select(["ts", di]).sort("ts")
