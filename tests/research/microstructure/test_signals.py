@@ -96,3 +96,16 @@ def test_ofi_cont_contributions():
     assert out["ofi"][0] is None   # first row: no previous update
     # e_1 = +3 (bid up by 3, ask unchanged contributes 0)
     assert abs(out["ofi"][1] - 3.0) < 1e-9
+
+
+def test_taker_imbalance_rolling():
+    from research.microstructure.signals import taker_imbalance
+    t0 = dt.datetime(2026, 1, 1, 0, 0, 0)
+    trades = pl.DataFrame({
+        "ts": [t0 + dt.timedelta(seconds=s) for s in range(3)],
+        "taker_buy_qty": [3.0, 0.0, 6.0],
+        "taker_sell_qty": [1.0, 4.0, 0.0],
+    })
+    out = taker_imbalance(trades, window=3)
+    # cumulative within window=3 at last row: buy=9, sell=5 -> (9-5)/14
+    assert abs(out["taker_imbalance"][2] - (4.0 / 14.0)) < 1e-12

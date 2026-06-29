@@ -110,3 +110,24 @@ def ofi(book: pl.DataFrame, *, window: int = 50) -> pl.DataFrame:
         pl.when(pl.col("_e").is_null()).then(None).otherwise(pl.col("ofi")).alias("ofi")
     )
     return out.select(["ts", "ofi"])
+
+
+def taker_imbalance(trades: pl.DataFrame, *, window: int = 100) -> pl.DataFrame:
+    """Rolling taker buy/sell imbalance from aggTrades.
+
+    TI = (rolling_buy - rolling_sell) / (rolling_buy + rolling_sell) over the
+    last `window` trades; null when the rolling total is zero.
+    Input: ts, taker_buy_qty, taker_sell_qty. Output: ts, taker_imbalance.
+    """
+    t = trades.sort("ts").with_columns(
+        pl.col("taker_buy_qty").rolling_sum(window_size=window, min_samples=1).alias("_b"),
+        pl.col("taker_sell_qty").rolling_sum(window_size=window, min_samples=1).alias("_s"),
+    )
+    total = pl.col("_b") + pl.col("_s")
+    ti = (
+        pl.when(total > 0)
+        .then((pl.col("_b") - pl.col("_s")) / total)
+        .otherwise(None)
+        .alias("taker_imbalance")
+    )
+    return t.select(["ts", ti])
