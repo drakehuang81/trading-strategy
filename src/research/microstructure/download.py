@@ -80,3 +80,24 @@ def load_book_depth(parquet_path: Path) -> pl.DataFrame:
         pl.col("timestamp").str.to_datetime(strict=False).alias("ts")
     )
     return df.select(["ts", "percentage", "depth", "notional"])
+
+
+def load_agg_trades(parquet_path: Path) -> pl.DataFrame:
+    """Load + normalize aggTrades, splitting volume into taker buy/sell.
+
+    is_buyer_maker=True  => buyer is maker => taker SOLD  -> taker_sell_qty
+    is_buyer_maker=False => buyer is taker => taker BOUGHT -> taker_buy_qty
+    Output: ts(Datetime), price, qty, taker_buy_qty, taker_sell_qty.
+    """
+    df = pl.read_parquet(parquet_path)
+    df = df.with_columns(
+        pl.from_epoch(pl.col("transact_time"), time_unit="ms").alias("ts"),
+        pl.col("quantity").alias("qty"),
+    )
+    df = df.with_columns(
+        pl.when(pl.col("is_buyer_maker"))
+        .then(0.0).otherwise(pl.col("qty")).alias("taker_buy_qty"),
+        pl.when(pl.col("is_buyer_maker"))
+        .then(pl.col("qty")).otherwise(0.0).alias("taker_sell_qty"),
+    )
+    return df.select(["ts", "price", "qty", "taker_buy_qty", "taker_sell_qty"])
