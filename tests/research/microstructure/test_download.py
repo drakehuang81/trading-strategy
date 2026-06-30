@@ -52,3 +52,43 @@ def test_load_book_ticker_normalizes_columns(tmp_path: Path):
     assert df.columns == ["ts", "bid_price", "bid_qty", "ask_price", "ask_qty"]
     assert df["bid_price"][0] == 100.0
     assert df["ts"].dtype == pl.Datetime
+
+
+def test_load_book_depth_normalizes(tmp_path: Path):
+    raw = pl.DataFrame({
+        "timestamp": ["2026-06-01 00:00:07", "2026-06-01 00:00:07"],
+        "percentage": [-1.0, 1.0],
+        "depth": [42881.4, 28062.9],
+        "notional": [8.5e7, 5.6e7],
+    })
+    p = tmp_path / "bd.parquet"
+    raw.write_parquet(p)
+    from research.microstructure.download import load_book_depth
+    df = load_book_depth(p)
+    assert df.columns == ["ts", "percentage", "depth", "notional"]
+    assert df["ts"].dtype == pl.Datetime
+    assert df.height == 2
+
+
+def test_load_agg_trades_normalizes_and_signs_taker(tmp_path: Path):
+    raw = pl.DataFrame({
+        "agg_trade_id": [1, 2],
+        "price": [2006.3, 2006.4],
+        "quantity": [0.36, 1.0],
+        "first_trade_id": [10, 11],
+        "last_trade_id": [10, 12],
+        "transact_time": [1780272000067, 1780272000357],
+        "is_buyer_maker": [True, False],
+    })
+    p = tmp_path / "agg.parquet"
+    raw.write_parquet(p)
+    from research.microstructure.download import load_agg_trades
+    df = load_agg_trades(p)
+    assert df.columns == ["ts", "price", "qty", "taker_buy_qty", "taker_sell_qty"]
+    assert df["ts"].dtype == pl.Datetime
+    # is_buyer_maker=True -> taker SOLD: taker_sell_qty=0.36, taker_buy_qty=0
+    assert df["taker_sell_qty"][0] == 0.36
+    assert df["taker_buy_qty"][0] == 0.0
+    # is_buyer_maker=False -> taker BOUGHT
+    assert df["taker_buy_qty"][1] == 1.0
+    assert df["taker_sell_qty"][1] == 0.0

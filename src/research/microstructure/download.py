@@ -66,3 +66,38 @@ def load_book_ticker(parquet_path: Path) -> pl.DataFrame:
         pl.from_epoch(pl.col(BOOK_TICKER_TS_COL), time_unit="ms").alias("ts")
     )
     return df.select(["ts", "bid_price", "bid_qty", "ask_price", "ask_qty"])
+
+
+def load_book_depth(parquet_path: Path) -> pl.DataFrame:
+    """Load + normalize a bookDepth parquet (long form: one row per level).
+
+    Output: ts(Datetime), percentage, depth, notional. Timestamp is parsed
+    from the raw "YYYY-MM-DD HH:MM:SS" string. 12 symmetric percentage levels
+    (+/-0.2/1/2/3/4/5) share each ts.
+    """
+    df = pl.read_parquet(parquet_path)
+    df = df.with_columns(
+        pl.col("timestamp").str.to_datetime(strict=False).alias("ts")
+    )
+    return df.select(["ts", "percentage", "depth", "notional"])
+
+
+def load_agg_trades(parquet_path: Path) -> pl.DataFrame:
+    """Load + normalize aggTrades, splitting volume into taker buy/sell.
+
+    is_buyer_maker=True  => buyer is maker => taker SOLD  -> taker_sell_qty
+    is_buyer_maker=False => buyer is taker => taker BOUGHT -> taker_buy_qty
+    Output: ts(Datetime), price, qty, taker_buy_qty, taker_sell_qty.
+    """
+    df = pl.read_parquet(parquet_path)
+    df = df.with_columns(
+        pl.from_epoch(pl.col("transact_time"), time_unit="ms").alias("ts"),
+        pl.col("quantity").alias("qty"),
+    )
+    df = df.with_columns(
+        pl.when(pl.col("is_buyer_maker"))
+        .then(0.0).otherwise(pl.col("qty")).alias("taker_buy_qty"),
+        pl.when(pl.col("is_buyer_maker"))
+        .then(pl.col("qty")).otherwise(0.0).alias("taker_sell_qty"),
+    )
+    return df.select(["ts", "price", "qty", "taker_buy_qty", "taker_sell_qty"])

@@ -15,3 +15,15 @@ def test_summarize_schema_reports_columns_and_cadence():
     assert "percentage" in summary["columns"]
     assert summary["median_gap_ms"] == 1000
     assert summary["distinct_percentage"] == [1]
+
+
+def test_summarize_schema_handles_string_timestamps():
+    # bookDepth ships timestamp as a string; gap calc must not crash
+    df = pl.DataFrame({
+        "timestamp": ["2026-06-01 00:00:00", "2026-06-01 00:00:33", "2026-06-01 00:01:06"],
+        "percentage": [1.0, 1.0, 1.0],
+        "depth": [10.0, 11.0, 12.0],
+    })
+    summary = summarize_schema(df, ts_col="timestamp")
+    assert summary["n_rows"] == 3
+    assert summary["median_gap_ms"] == 33_000  # parsed, not crashed
