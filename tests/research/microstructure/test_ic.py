@@ -37,3 +37,13 @@ def test_quantile_layering_monotone_at_double_digit_buckets():
     buckets = quantile_layering(df, signal_col="qi", horizon_col="fwd_1s", n_buckets=15)
     means = buckets["mean_fwd"].to_list()
     assert means == sorted(means)
+
+
+def test_compute_ic_drops_nan_not_just_null():
+    from research.microstructure.ic import compute_ic
+    # one NaN in the signal must be excluded, not poison the whole horizon
+    sig = [float("nan")] + list(np.linspace(-1, 1, 100))
+    fwd = [0.0] + list(np.linspace(-1, 1, 100) * 2.0)
+    df = pl.DataFrame({"qi": sig, "fwd_1s": fwd})
+    ic = compute_ic(df, signal_col="qi", horizon_cols=["fwd_1s"])
+    assert abs(ic["fwd_1s"] - 1.0) < 1e-6  # ~1.0, not nan

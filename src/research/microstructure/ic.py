@@ -14,7 +14,11 @@ def compute_ic(
 ) -> dict[str, float]:
     out: dict[str, float] = {}
     for hcol in horizon_cols:
-        pair = df.select([signal_col, hcol]).drop_nulls()
+        pair = (
+            df.select([signal_col, hcol])
+            .drop_nulls()
+            .filter(pl.col(signal_col).is_finite() & pl.col(hcol).is_finite())
+        )
         if pair.height < 3:
             out[hcol] = float("nan")
             continue
