@@ -51,6 +51,46 @@ If Phase 2b validates:
 6. **`recon_multi` robustness** — it silently requires `signals` dict keys == signal column names (the integration driver hit a ColumnNotFoundError). Make it derive the column name or assert clearly.
 7. **BTC→ETH cross-asset** signals (deferred from 2a).
 
+## UPDATE — Cost check with taker fee (the real make-or-break)
+
+The IC/decile numbers above are pre-cost. Re-ran decile edge vs REALISTIC
+Binance USD-M perp taker fee (round-trip ~3.6 bps BNB-VIP, ~8 bps standard).
+**Spread is negligible** (median 0.054 bps — ETH perp is ultra-liquid); the
+**taker fee is the binding cost**, which the first check wrongly omitted.
+
+Net decile edge (bps) after taker round-trip:
+
+| horizon | qi net @VIP / std | depth_imbalance net @VIP / std |
+|---|---|---|
+| 1–60s | all negative | all negative |
+| 5m | −2.3 / −6.7 | +0.5 / −3.9 |
+| **15m** | −1.6 / −6.0 | **+11.5 / +7.1** |
+| **1h** | +1.6 / −2.8 | **+18.7 / +14.3** |
+
+**Verdict (supersedes the provisional pointer above):**
+- **qi (L1) is NOT taker-tradeable** — strong IC is at the second scale where
+  edge (0.2–0.9 bps) << taker fee. Only viable as a maker / HF market-maker
+  (separate architecture). **Deferred.**
+- **depth_imbalance @ 15m–1h is the first signal net-positive after realistic
+  taker fee** (+7 to +14 bps @ standard taker), IC 0.5, monotone. This horizon
+  fits the existing 1h + LLM architecture. **This is the lead.**
+
+### Phase 2b (focused) must-haves — validate depth_imbalance @ 15m–1h
+1. **Full-window study** 2023-05→2024-03, multi-day chunked driver (not one day).
+2. **Trend control (#1 risk)** — is depth@1h causal, or just "buy-orders pile up
+   while price trends"? Compare depth-signal PnL vs buy-and-hold beta; test
+   up/down/chop regimes separately.
+3. **OOS holdout** (time split) — headline edge must survive out-of-sample.
+4. **Full-bucket monotonicity** (not just extreme deciles) + tail-robustness
+   (is +22 bps driven by a few big 1h moves?).
+5. **Newey-West / block-bootstrap t-stat** (only ~24 non-overlapping 1h
+   windows/day — small effective N).
+6. **Capacity / turnover** — decile-strategy trade frequency + notional.
+7. `recon_multi` robustness (derive signal column name — hit this bug twice).
+
+ofi / book_slope / taker_imbalance, qi's maker-only path, and BTC→ETH
+cross-asset are all deferred to a later phase.
+
 ## Reproduce
 
 Driver logic (ad-hoc, scratchpad): download bookTicker/bookDepth/aggTrades for the date via `download.build_url/download_zip/extract_zip_to_parquet`, load via `load_book_ticker/load_book_depth/load_agg_trades`, build grid via `to_mid_grid`, build the 5 signals, call `recon_multi(grid, signals, horizons_secs=[1,5,10,30,60,300,900,3600])`. Phase 2b turns this into a proper multi-day CLI.
