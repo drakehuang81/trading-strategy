@@ -6,6 +6,7 @@ kline close, with forward 1h return. time_split: strict time-ordered holdout.
 from __future__ import annotations
 
 import polars as pl
+from scipy.stats import spearmanr
 
 from research.microstructure.signals import depth_imbalance
 
@@ -34,3 +35,35 @@ def time_split(ds: pl.DataFrame, *, train_frac: float = 0.7) -> tuple[pl.DataFra
     ds = ds.sort("hour")
     cut = int(ds.height * train_frac)
     return ds.head(cut), ds.tail(ds.height - cut)
+
+
+def ic(ds: pl.DataFrame, col: str, *, target: str = "fwd_1h") -> float:
+    p = ds.select([col, target]).drop_nulls().filter(
+        pl.col(col).is_finite() & pl.col(target).is_finite()
+    )
+    if p.height < 3:
+        return float("nan")
+    return float(spearmanr(p[col].to_numpy(), p[target].to_numpy())[0])
+
+
+def decile_edge_bps(ds: pl.DataFrame, *, n_buckets: int = 10, taker_std_bps: float = 8.0) -> dict:
+    """Mean fwd_1h (bps) per di quantile; gross = best of top-long/bottom-short."""
+    labels = [str(i).zfill(len(str(n_buckets - 1))) for i in range(n_buckets)]
+    g = (
+        ds.drop_nulls(["di", "fwd_1h"])
+        .with_columns(pl.col("di").qcut(n_buckets, labels=labels, allow_duplicates=True).alias("b"))
+        .group_by("b").agg((pl.col("fwd_1h").mean() * 1e4).alias("r")).sort("b")
+    )
+    means = g["r"].to_list()
+    gross = max(means[-1], -means[0])
+    return {"means": means, "gross_bps": gross, "net_std_taker_bps": gross - taker_std_bps}
+
+
+def newey_west_tstat(returns, *, lags: int = 5) -> float:
+    """HAC t-stat of the mean of a return series (autocorrelation-robust)."""
+    import numpy as np
+    import statsmodels.api as sm
+    y = np.asarray(returns, dtype=float)
+    x = np.ones_like(y)
+    model = sm.OLS(y, x).fit(cov_type="HAC", cov_kwds={"maxlags": lags})
+    return float(model.tvalues[0])

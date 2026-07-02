@@ -31,3 +31,36 @@ def test_time_split_70_30_by_date():
     train, test = time_split(ds, train_frac=0.7)
     assert train.height == 7 and test.height == 3
     assert train["hour"].max() < test["hour"].min()  # strictly time-ordered
+
+
+def test_decile_edge_bps_monotone_and_tail():
+    import numpy as np
+    rng = np.random.default_rng(0)
+    di = rng.normal(size=4000)
+    fwd = di * 0.001 + rng.normal(scale=0.002, size=4000)  # di predicts fwd
+    ds = pl.DataFrame({"di": di, "fwd_1h": fwd})
+    from research.microstructure.depth_study import decile_edge_bps
+    res = decile_edge_bps(ds, n_buckets=10)
+    assert res["means"] == sorted(res["means"])          # full-bucket monotone
+    assert res["net_std_taker_bps"] == res["gross_bps"] - 8.0
+
+
+def test_newey_west_tstat_runs():
+    import numpy as np
+    rng = np.random.default_rng(1)
+    r = rng.normal(loc=0.5, scale=1.0, size=200)  # positive-mean series
+    from research.microstructure.depth_study import newey_west_tstat
+    t = newey_west_tstat(r, lags=5)
+    assert t > 3.0  # clearly positive
+
+
+def test_momentum_control_ic():
+    # depth IC vs momentum(past return) IC — if equal, depth is trend proxy
+    import numpy as np
+    rng = np.random.default_rng(2)
+    di = rng.normal(size=1000)
+    past = rng.normal(size=1000)
+    fwd = di * 0.001 + rng.normal(scale=0.002, size=1000)  # driven by di, not past
+    ds = pl.DataFrame({"di": di, "past_1h": past, "fwd_1h": fwd})
+    from research.microstructure.depth_study import ic
+    assert abs(ic(ds, "di")) > abs(ic(ds, "past_1h")) + 0.1

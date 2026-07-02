@@ -39,3 +39,6 @@ pyyaml>=6.0
 
 # Recon Phase 1 additions
 polars>=1.0
+
+# Recon Phase 2b additions
+statsmodels>=0.14
