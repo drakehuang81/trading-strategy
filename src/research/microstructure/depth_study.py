@@ -81,10 +81,14 @@ def build_hourly_cross(
     fwd_1h / past_1h = LAG symbol's forward / trailing 1h return. fwd_1h (lag)
     is the prediction target.
     """
-    lead = build_hourly(depth_lead, klines_lead).sort("hour")
-    lead = lead.with_columns(
+    lead_book = build_hourly(depth_lead, klines_lead).select(["hour", "di"])
+    # momentum control from the COMPLETE kline series, not the book-hour rows:
+    # a gap in depth snapshots must not silently turn "1h momentum" into a
+    # multi-hour return (that would weaken the control the gate relies on)
+    lead_mom = klines_lead.sort("hour").with_columns(
         (pl.col("close") / pl.col("close").shift(1) - 1).alias("past_1h_lead")
-    ).select(["hour", "di", "past_1h_lead"])
+    ).select(["hour", "past_1h_lead"])
+    lead = lead_book.join(lead_mom, on="hour", how="inner")
     lag = klines_lag.sort("hour").with_columns(
         (pl.col("close").shift(-1) / pl.col("close") - 1).alias("fwd_1h"),
         (pl.col("close") / pl.col("close").shift(1) - 1).alias("past_1h"),
