@@ -64,3 +64,24 @@ def test_momentum_control_ic():
     ds = pl.DataFrame({"di": di, "past_1h": past, "fwd_1h": fwd})
     from research.microstructure.depth_study import ic
     assert abs(ic(ds, "di")) > abs(ic(ds, "past_1h")) + 0.1
+
+
+def test_build_hourly_cross_lead_book_lag_return():
+    from research.microstructure.depth_study import build_hourly_cross
+    h0 = dt.datetime(2023, 6, 1, 0, 0, 0)
+    h1 = dt.datetime(2023, 6, 1, 1, 0, 0)
+    h2 = dt.datetime(2023, 6, 1, 2, 0, 0)
+    depth_btc = pl.DataFrame({
+        "ts": [h0, h0, h1, h1],
+        "percentage": [-1.0, 1.0, -1.0, 1.0],
+        "depth": [30.0, 10.0, 10.0, 30.0],
+    })
+    klines_btc = pl.DataFrame({"hour": [h0, h1, h2], "close": [200.0, 202.0, 201.0]})
+    klines_eth = pl.DataFrame({"hour": [h0, h1, h2], "close": [100.0, 105.0, 99.0]})
+    ds = build_hourly_cross(depth_btc, klines_btc, klines_eth)
+    row0 = ds.filter(pl.col("hour") == h0)
+    assert abs(row0["di"][0] - 0.5) < 1e-9            # di from the BTC book
+    assert abs(row0["fwd_1h"][0] - 0.05) < 1e-9       # target = ETH 100->105
+    row1 = ds.filter(pl.col("hour") == h1)
+    assert abs(row1["past_1h"][0] - 0.05) < 1e-9      # ETH's own momentum
+    assert abs(row1["past_1h_lead"][0] - 0.01) < 1e-9  # BTC momentum 200->202

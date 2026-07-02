@@ -67,3 +67,34 @@ def newey_west_tstat(returns, *, lags: int = 5) -> float:
     x = np.ones_like(y)
     model = sm.OLS(y, x).fit(cov_type="HAC", cov_kwds={"maxlags": lags})
     return float(model.tvalues[0])
+
+
+def build_hourly_cross(
+    depth_lead: pl.DataFrame,
+    klines_lead: pl.DataFrame,
+    klines_lag: pl.DataFrame,
+) -> pl.DataFrame:
+    """Cross-asset hourly dataset: lead symbol's book vs lag symbol's return.
+
+    Output (hour, di, past_1h_lead, fwd_1h, past_1h): di = LEAD symbol's
+    hourly mean depth imbalance; past_1h_lead = lead's own trailing 1h return;
+    fwd_1h / past_1h = LAG symbol's forward / trailing 1h return. fwd_1h (lag)
+    is the prediction target.
+    """
+    lead_book = build_hourly(depth_lead, klines_lead).select(["hour", "di"])
+    # momentum control from the COMPLETE kline series, not the book-hour rows:
+    # a gap in depth snapshots must not silently turn "1h momentum" into a
+    # multi-hour return (that would weaken the control the gate relies on)
+    lead_mom = klines_lead.sort("hour").with_columns(
+        (pl.col("close") / pl.col("close").shift(1) - 1).alias("past_1h_lead")
+    ).select(["hour", "past_1h_lead"])
+    lead = lead_book.join(lead_mom, on="hour", how="inner")
+    lag = klines_lag.sort("hour").with_columns(
+        (pl.col("close").shift(-1) / pl.col("close") - 1).alias("fwd_1h"),
+        (pl.col("close") / pl.col("close").shift(1) - 1).alias("past_1h"),
+    ).select(["hour", "fwd_1h", "past_1h"])
+    return (
+        lead.join(lag, on="hour", how="inner")
+        .drop_nulls(["di", "fwd_1h"])
+        .sort("hour")
+    )
