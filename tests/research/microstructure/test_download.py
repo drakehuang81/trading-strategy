@@ -92,3 +92,34 @@ def test_load_agg_trades_normalizes_and_signs_taker(tmp_path: Path):
     # is_buyer_maker=False -> taker BOUGHT
     assert df["taker_buy_qty"][1] == 1.0
     assert df["taker_sell_qty"][1] == 0.0
+
+
+def test_load_klines_1h_headerless(tmp_path: Path):
+    # headerless CSV -> parquet, as extract_zip_to_parquet would NOT work
+    # (that assumes header); load_klines_1h reads with has_header=False.
+    import csv
+    csv_path = tmp_path / "k.csv"
+    with csv_path.open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow([1685577600000, 1900, 1910, 1890, 1905, 100, 1685581199999, 0, 0, 0, 0, 0])
+        w.writerow([1685581200000, 1905, 1915, 1900, 1912, 120, 1685584799999, 0, 0, 0, 0, 0])
+    from research.microstructure.download import load_klines_1h
+    df = load_klines_1h(csv_path)
+    assert df.columns == ["hour", "close"]
+    assert df["hour"].dtype == pl.Datetime
+    assert df["close"][0] == 1905.0
+
+
+def test_load_klines_1h_with_header_row(tmp_path: Path):
+    # real um-futures daily kline CSVs ship WITH a header row — loader must
+    # skip it instead of failing the numeric cast
+    csv_path = tmp_path / "kh.csv"
+    csv_path.write_text(
+        "open_time,open,high,low,close,volume,close_time,quote_volume,count,"
+        "taker_buy_volume,taker_buy_quote_volume,ignore\n"
+        "1685577600000,1900,1910,1890,1905,100,1685581199999,0,0,0,0,0\n"
+    )
+    from research.microstructure.download import load_klines_1h
+    df = load_klines_1h(csv_path)
+    assert df.height == 1
+    assert df["close"][0] == 1905.0

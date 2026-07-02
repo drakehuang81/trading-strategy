@@ -23,8 +23,9 @@ def recon_multi(
     hcols = [f"fwd_{h}s" for h in horizons_secs]
     ic_by_signal: dict[str, dict[str, float]] = {}
     for name, sig in signals.items():
+        col = next(c for c in sig.columns if c != "ts")
         merged = g.join_asof(sig.sort("ts"), on="ts", strategy="backward")
-        ic_by_signal[name] = compute_ic(merged, signal_col=name, horizon_cols=hcols)
+        ic_by_signal[name] = compute_ic(merged, signal_col=col, horizon_cols=hcols)
     n_tests = len(signals) * len(hcols)
     md = render_ic_markdown(ic_by_signal, n_tests=n_tests)
     return md, ic_by_signal

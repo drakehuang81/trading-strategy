@@ -101,3 +101,27 @@ def load_agg_trades(parquet_path: Path) -> pl.DataFrame:
         .then(pl.col("qty")).otherwise(0.0).alias("taker_sell_qty"),
     )
     return df.select(["ts", "price", "qty", "taker_buy_qty", "taker_sell_qty"])
+
+
+KLINES_1H_BASE = "https://data.binance.vision/data/futures/um/daily/klines"
+
+
+def klines_1h_url(symbol: str, date: dt.date) -> str:
+    return f"{KLINES_1H_BASE}/{symbol}/1h/{symbol}-1h-{date.isoformat()}.zip"
+
+
+def load_klines_1h(csv_or_parquet: Path) -> pl.DataFrame:
+    """Load Binance 1h klines CSV → (hour, close).
+
+    Daily kline CSVs ship with or without a header row depending on vintage
+    (um-futures 2023-24 files DO have one) — read everything as strings, keep
+    only rows whose open_time is numeric, then cast.
+    Columns are positional: col 0 = open_time (epoch ms), col 4 = close.
+    """
+    df = pl.read_csv(csv_or_parquet, has_header=False, infer_schema=False)
+    open_time, close = df.columns[0], df.columns[4]
+    df = df.filter(pl.col(open_time).str.contains(r"^\d+$"))
+    return df.select(
+        pl.from_epoch(pl.col(open_time).cast(pl.Int64), time_unit="ms").alias("hour"),
+        pl.col(close).cast(pl.Float64).alias("close"),
+    )
