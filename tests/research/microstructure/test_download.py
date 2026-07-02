@@ -108,3 +108,18 @@ def test_load_klines_1h_headerless(tmp_path: Path):
     assert df.columns == ["hour", "close"]
     assert df["hour"].dtype == pl.Datetime
     assert df["close"][0] == 1905.0
+
+
+def test_load_klines_1h_with_header_row(tmp_path: Path):
+    # real um-futures daily kline CSVs ship WITH a header row — loader must
+    # skip it instead of failing the numeric cast
+    csv_path = tmp_path / "kh.csv"
+    csv_path.write_text(
+        "open_time,open,high,low,close,volume,close_time,quote_volume,count,"
+        "taker_buy_volume,taker_buy_quote_volume,ignore\n"
+        "1685577600000,1900,1910,1890,1905,100,1685581199999,0,0,0,0,0\n"
+    )
+    from research.microstructure.download import load_klines_1h
+    df = load_klines_1h(csv_path)
+    assert df.height == 1
+    assert df["close"][0] == 1905.0

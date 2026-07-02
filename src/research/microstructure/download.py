@@ -111,12 +111,16 @@ def klines_1h_url(symbol: str, date: dt.date) -> str:
 
 
 def load_klines_1h(csv_or_parquet: Path) -> pl.DataFrame:
-    """Load headerless Binance 1h klines CSV → (hour, close).
+    """Load Binance 1h klines CSV → (hour, close).
 
+    Daily kline CSVs ship with or without a header row depending on vintage
+    (um-futures 2023-24 files DO have one) — read everything as strings, keep
+    only rows whose open_time is numeric, then cast.
     Columns are positional: col 0 = open_time (epoch ms), col 4 = close.
     """
-    df = pl.read_csv(csv_or_parquet, has_header=False)
+    df = pl.read_csv(csv_or_parquet, has_header=False, infer_schema=False)
     open_time, close = df.columns[0], df.columns[4]
+    df = df.filter(pl.col(open_time).str.contains(r"^\d+$"))
     return df.select(
         pl.from_epoch(pl.col(open_time).cast(pl.Int64), time_unit="ms").alias("hour"),
         pl.col(close).cast(pl.Float64).alias("close"),
