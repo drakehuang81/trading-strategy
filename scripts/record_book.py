@@ -2,9 +2,13 @@
 
 Binance stopped publishing historical bookTicker archives in 2024-03; live
 recording is the ONLY way the qi maker/HF hypothesis ever becomes testable
-(see docs/handoff/current/2026-06-29-post-recon-operations.md §1b). Subscribes
-one futures multiplex socket for <symbol>@bookTicker / @aggTrade /
-@depth5@500ms and appends raw payloads to
+(see docs/handoff/current/2026-06-29-post-recon-operations.md §1b).
+
+Binance sharded the futures websocket hosts (verified empirically 2026-07):
+book streams (bookTicker / depth*) are served ONLY by the legacy endpoint
+(category=None), while aggTrade is served ONLY by the "market" shard. So the
+recorder runs one multiplex socket per shard, each with its own reconnect
+loop, appending raw payloads to
     <out>/<kind>/<SYMBOL>/<YYYY-MM-DD>.jsonl   (UTC rollover)
 
 Run (long-lived; Ctrl-C to stop):
@@ -52,15 +56,32 @@ def append_jsonl(root: Path, kind: str, symbol: str, ts_ms: int, payload: dict) 
     return path
 
 
-async def record(symbols: list[str], kinds: list[str], root: Path) -> None:
-    """Reconnecting record loop over one futures multiplex socket."""
-    streams = [f"{s.lower()}@{k}" for s in symbols for k in kinds]
+def split_streams(symbols: list[str], kinds: list[str]) -> dict[str | None, list[str]]:
+    """Group stream names by the futures ws shard that actually serves them.
+
+    aggTrade -> "market" shard; bookTicker/depth* -> legacy endpoint (None).
+    """
+    groups: dict[str | None, list[str]] = {}
+    for kind in kinds:
+        category = "market" if kind == "aggTrade" else None
+        groups.setdefault(category, []).extend(
+            f"{s.lower()}@{kind}" for s in symbols
+        )
+    return groups
+
+
+async def _record_stream_group(
+    streams: list[str], category: str | None, root: Path
+) -> None:
+    """Reconnecting record loop over one multiplex socket on one shard."""
     while True:
         client = await AsyncClient.create()
         try:
-            sock = BinanceSocketManager(client).futures_multiplex_socket(streams)
+            sock = BinanceSocketManager(client).futures_multiplex_socket(
+                streams, category=category,
+            )
             async with sock as stream:
-                print(f"recording {streams} -> {root}")
+                print(f"recording {streams} (category={category!r}) -> {root}")
                 while True:
                     msg = await stream.recv()
                     if not isinstance(msg, dict) or "stream" not in msg:
@@ -73,7 +94,20 @@ async def record(symbols: list[str], kinds: list[str], root: Path) -> None:
             print(f"stream error ({e!r}); reconnecting in {RECONNECT_BACKOFF_SECS}s")
             await asyncio.sleep(RECONNECT_BACKOFF_SECS)
         finally:
-            await client.close_connection()
+            # bound the close: an unresponsive ws must not wedge shutdown
+            try:
+                await asyncio.wait_for(client.close_connection(), timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def record(symbols: list[str], kinds: list[str], root: Path) -> None:
+    """Run one recording loop per required shard, concurrently."""
+    groups = split_streams(symbols, kinds)
+    await asyncio.gather(*(
+        _record_stream_group(streams, category, root)
+        for category, streams in groups.items()
+    ))
 
 
 def main() -> None:

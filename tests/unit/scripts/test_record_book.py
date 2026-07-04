@@ -2,7 +2,17 @@
 import json
 from pathlib import Path
 
-from scripts.record_book import append_jsonl, route_message
+from scripts.record_book import append_jsonl, route_message, split_streams
+
+
+def test_split_streams_by_shard():
+    # Binance shards: aggTrade only on "market"; book streams only on legacy
+    groups = split_streams(["BTCUSDT", "ETHUSDT"], ["bookTicker", "aggTrade", "depth5@500ms"])
+    assert groups["market"] == ["btcusdt@aggTrade", "ethusdt@aggTrade"]
+    assert groups[None] == [
+        "btcusdt@bookTicker", "ethusdt@bookTicker",
+        "btcusdt@depth5@500ms", "ethusdt@depth5@500ms",
+    ]
 
 
 def test_route_message_book_ticker():
