@@ -1,6 +1,6 @@
 # 交接:Recon Program 完結 → 戰略分岔點(2026-06-29)
 
-> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。程式碼與紀錄全部在 `main`(`572c60b`)並已同步遠端。專案現在站在一個**戰略選擇點**(§7;§6 是走到這裡的決策紀錄),不是技術卡點。接手者的第一件事是和 Drake 確認走哪條路,而不是寫 code。
+> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。**戰略方向已於 2026-06-29 拍板(§7):Phase 2c「Binance alt-perp 多幣掃描」為主線(帶複製檢驗與事先承諾的終局),paper 助理並行,qi maker 緩議。** §6 是走到這裡的完整決策紀錄。接手者:先看 §7 的 2c 進度與掃描結果,再決定下一步。
 
 ## 1. 專案是什麼
 
@@ -76,17 +76,28 @@ recon program 的每個分岔點、當時的選項、Drake 的決定與結果—
 | 偵察範圍 | 精實 / **完整** / 超精實試水 | **完整偵察** | 寧可多測,不因範圍太窄漏掉 edge | 五個信號全數實測 |
 | 單日 cost-check 後 | (數據自動收斂,無需人工選) | 聚焦驗證 depth@1h(→ 2b-1) | 唯一扣 taker fee 後淨正的信號,且 horizon 契合 1h 架構 | **FAILED**(單日 IC 0.50 是 regime artifact) |
 | 2b-1 失敗後的分岔 | qi maker 路線 / **cross-asset lead-lag** / 收手 | **cross-asset(→ 2b-2)** | 最後一個沒測過的免費數據假設;harness 現成、成本最低;maker 路線是整個新專案 | **FAILED**(雙動能控制都比信號強) |
-| **現在(2b-2 失敗後)** | 見 §7 三條路 | **未決** — 等 Drake 拍板 | — | — |
+| 2b-2 失敗後的分岔 | qi maker / 換市場 / 收手 | **拍板(2026-06-29):掃描框架**(見 §7) | 換市場的「Binance 多幣掃描」版是唯一幾小時可證偽的路;maker 連回測都做不到(無逐筆 L2 歷史);paper 並行零成本 | Phase 2c 進行中 |
 
-注意:§7 的三條路裡**不再包含 cross-asset**——它已在 2b-2 被選過、測過、否證,別重走。
+注意:選項裡**不再包含 cross-asset 對 ETH**——已在 2b-2 測過否證;但 BTC book → **alt** 是新假設,包含在 2c 掃描內。
 
-## 7. 未決事項:戰略分岔(接手後第一件事)
+## 7. 已拍板的方向:掃描框架(2026-06-29,Drake 核准)
 
-三條路都是**結構性不同的方向**,由 Drake 拍板,不是預設繼續哪條:
+**推薦與決定**:主攻「**Binance alt-perp 多幣掃描**」(Phase 2c)+ paper 助理並行;qi maker 路線緩議、只做保留選擇權的最小動作。理由與設計:
 
-1. **qi maker/HF 做市路線** — 唯一有真實資訊量的信號(秒級 IC 0.37)。但需要 maker-fill 模擬、queue position、庫存風險——是**新專案**,從 brainstorming/spec 開始,不是在現有 harness 上加 task。
-2. **換市場** — harness 現成(`--lead/--lag/--symbol` 參數化),但 data.binance.vision 只有 Binance;其他 venue 要新 loaders。先想清楚「哪個市場的費用/波動比更友善」再動手。
-3. **收手/守成** — 讓 1h 助理以 paper 模式跑著(需完整 venv + Ollama,見 spec §4.8 boot 流程),把六輪否證當作「這套流程可信」的證明。
+### 7.1 主線:Phase 2c 多幣掃描(最後一張便宜的彩券)
+
+- **為什麼**:換交易所要新 loaders 且多半沒有免費歷史 book 數據;但 data.binance.vision 對**每個** USD-M perp 都有 bookDepth+klines,drivers 已參數化 → 成本是幾小時下載。且薄 book 的 imbalance 信號先驗上更強、alt 波動大使 8bps taker 門檻相對容易;depth 系不受 bookTicker 停更限制,**可用兩個不重疊窗口做複製檢驗**。
+- **防 p-hacking 規則(事先承諾)**:幣單事先登記不可中途加;每 symbol 測兩個假設(自身 depth@1h、BTC book→alt);四道 gate 原封不動;**任何 discovery-窗口 PASS 必須在不重疊的 replication 窗口複製成功**才算數;**全滅 → 「免費 Binance 數據找方向 edge」永久關閉**,不再回頭。
+- **誠實期望**:~10–20% 掃出可複製 lead;但不論結果,答案是終局性的。
+- Plan:`docs/superpowers/plans/2026-06-29-orderbook-recon-phase2c-symbol-sweep.md`
+
+### 7.2 並行:paper 助理跑起來
+
+零研究成本;Pre-Live Gate 本來就要求 60 天 heartbeat / HALT 演練等**營運履歷**,現在開始累積。前置:重建完整 3.11 venv + Ollama(主 repo venv 是壞的 3.9)。**此項尚未動工**——是接手者可獨立進行的 ops 任務(spec §4.8 boot 流程)。
+
+### 7.3 緩議:qi maker/HF(只做「開錄」保留選擇權)
+
+訊號是真的,但護城河在執行(queue position、逆選擇、延遲),對手是 colocation 的專業 MM;且**無法回測**——公開檔案沒有逐筆 L2,模擬 maker 成交需先錄 2–3 個月即時數據。唯一值得現在做的:**擴充 TickRecorder 也錄 book stream 並開錄**(成本趨近零,純保留選擇權)。**尚未動工**。
 
 ## 8. 文件地圖
 
