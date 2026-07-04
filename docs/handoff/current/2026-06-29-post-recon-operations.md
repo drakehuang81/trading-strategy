@@ -8,17 +8,22 @@
 
 讓 1h 助理以 paper 模式長跑,累積 Pre-Live Gate 要求的營運履歷(60 天 heartbeat、HALT 演練等——見 spec §10)。就算沒有 edge 模型,營運履歷與紀律本身就是產出。
 
-前置(都是 ops,不是研究):
-1. 主 repo 重建**完整** 3.11 venv(現有 `venv/` 是壞的 3.9;`pip install -r requirements.txt` 全裝,含 pydantic/sqlalchemy/ollama 等)
-2. 安裝/啟動 Ollama + Gemma 模型(boot 會 ping,失敗則 LLM-disabled 模式繼續)
-3. `python -m orchestrator`(boot 流程見 spec §4.8)+ Telegram token(`.env`,有 `.env.example`)
-4. 驗證:完整 test suite(~373+38 個)應全綠
+**✅ 2026-06-29 已完成(可開機)**:
+1. ✅ 主 repo 3.11 venv 重建完成(注意:`instructor` 需 `<1.15.2`,已釘進 requirements——1.15.4 會 hard-reject ollama client)
+2. ✅ `.env`(Telegram token)已從舊 pivot worktree 復用
+3. ✅ boot 煙霧通過:`PYTHONPATH=src venv/bin/python -m src.cli` → `boot_complete` + `telegram_bot_started`,SIGINT 乾淨關機
+4. ✅ 完整 suite 綠(production + research,~416 tests)
+
+**尚未做(要用時再做)**:
+- 長跑本身(前景跑 + 休眠行為見 `docs/SANDBOX_OPS.md`;24/7 要 `caffeinate` 或換 always-on 機器)
+- Ollama + Gemma(**可選**——free-text chat 才需要,沒裝 bot 不死;`brew install ollama` + pull 模型 ~10 分鐘)
 
 ### 1b. TickRecorder 錄 book stream(保留 qi maker 選擇權)
 
 qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/HF 路線**無法回測**——公開歷史沒有逐筆 L2。唯一讓它未來可測的方法:**現在開始錄**。
-- 現有 `src/execution/tick_recorder.py` 只錄 trades WS;需擴充 stream factory 訂 bookTicker/depth stream
-- 錄 2–3 個月後,maker 假設才第一次可證偽;在那之前不投入任何 maker 研究
+
+**✅ 2026-06-29 錄製器已完成並實測**:`scripts/record_book.py`(BTC/ETH × bookTicker/aggTrade/depth5@500ms → `data/ticks/`,雙 shard socket + 自動重連;15 秒實測六路全錄)。
+**尚未做:實際長跑**——`PYTHONPATH=src venv/bin/python -m scripts.record_book`(量級 ~400-600MB/天未壓縮;滿月後考慮 gzip 輪替)。錄滿 2–3 個月前不投入任何 maker 研究。
 
 ## 2. 環境與資產(接手必讀)
 

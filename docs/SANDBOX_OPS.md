@@ -19,10 +19,12 @@
 
 ## 開機
 
+> 2026-06-29 起主 repo 即為運行環境(3.11 venv 已重建,pivot 內容早已 merge)。
+> 不要再從 `.worktrees/pivot-foundation` 跑。
+
 ```bash
-cd /Users/drakehuang/SideProject/Trading/quant-trading-project/.worktrees/pivot-foundation
-source venv/bin/activate
-PYTHONPATH=src python -m src.cli
+cd /Users/drakehuang/SideProject/Trading/quant-trading-project
+PYTHONPATH=src venv/bin/python -m src.cli
 ```
 
 預期看到（JSON log）：
@@ -99,13 +101,24 @@ PYTHONPATH=src python -m scripts.pre_live_gate
 
 目前狀態 4/8 passed（`calibration_brier`、`paper_runtime`、`watchdog_uptime`、`halt_diversity` 都 ❌）。**所以即使你誤切 live，1 秒內就會被擋**。
 
-## 目前 git 狀態
+## Book stream 錄製器(qi maker 選擇權保留)
 
-- Branch: `pivot/foundation`（worktree 在 `.worktrees/pivot-foundation/`）
-- main 落後很多（pivot/foundation 總共幾十個 commit）
-- 374 tests passed + mypy --strict 0 errors
+Binance 2024-03 起不再發布歷史 bookTicker;要讓 maker/HF 假設未來可測,唯一方法是自己錄。長跑:
 
-下次想 merge 進 main 之前 `git log main..HEAD --oneline | wc -l` 看一下。
+```bash
+PYTHONPATH=src venv/bin/python -m scripts.record_book
+# 24/7:另開 terminal `caffeinate -dis &`
+```
+
+錄 BTC/ETH × bookTicker/aggTrade/depth5@500ms → `data/ticks/<kind>/<SYMBOL>/<date>.jsonl`(UTC 日切)。
+注意:Binance futures ws 已分流——book 類只在 legacy 端點、aggTrade 只在 market shard,錄製器自動開雙 socket。
+量級:bookTicker ~200 msg/s/symbol,估 ~400-600MB/天(未壓縮);滿一個月後考慮 gzip 輪替。
+
+## 目前 git 狀態(2026-06-29 更新)
+
+- 一切在 `main`,與 origin 同步;pivot / recon 歷史全數 merge。
+- 專案現況與交接:**先讀 `docs/handoff/current/`**(recon program 已終局關閉,詳見 archive)。
+- requirements 注意:`instructor` 已釘 `<1.15.2`(1.15.4 會 hard-reject ollama client)。
 
 ## Plan 5 軌道全部文件位置
 
