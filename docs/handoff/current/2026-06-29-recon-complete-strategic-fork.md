@@ -1,6 +1,6 @@
 # 交接:Recon Program 完結 → 戰略分岔點(2026-06-29)
 
-> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。程式碼與紀錄全部在 `main`(`572c60b`)並已同步遠端。專案現在站在一個**戰略選擇點**(§6),不是技術卡點。接手者的第一件事是和 Drake 確認走哪條路,而不是寫 code。
+> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。程式碼與紀錄全部在 `main`(`572c60b`)並已同步遠端。專案現在站在一個**戰略選擇點**(§7;§6 是走到這裡的決策紀錄),不是技術卡點。接手者的第一件事是和 Drake 確認走哪條路,而不是寫 code。
 
 ## 1. 專案是什麼
 
@@ -64,7 +64,23 @@ PYTHONPATH=src venv/bin/python -m scripts.recon.cross_validation \
     --lead BTCUSDT --lag ETHUSDT --start 2023-05-16 --end 2024-03-30
 ```
 
-## 6. 未決事項:戰略分岔(接手後第一件事)
+## 6. 本輪的戰略決策紀錄(為什麼走到這裡)
+
+recon program 的每個分岔點、當時的選項、Drake 的決定與結果——接手者請延續同一個決策原則:**每一步都選「最便宜的可證偽下一步」**(整個 program 因此只花了 2026-06-28 → 06-29 兩天就得到確定性答案)。
+
+| 時點 | 面臨的選項 | 決定 | 理由 | 結果 |
+|---|---|---|---|---|
+| Plan 5E 終局後 | 認真找 edge / 當研究平台 / 先評估值不值得 | **認真找 edge** | 目標是真能實盤的策略,接受引入新數據源 | 開啟 recon program |
+| 選 edge 來源 | 多資產動能 / **order book 微結構** / on-chain | **order book** | 理論 alpha 最強(OFI 文獻),接受數據門檻最高 | Step 0 證實歷史數據可得 |
+| 頻率架構衝突 | 直接建分鐘級子系統 / 聚合進 1h 架構 / **先做 edge 偵察** | **先偵察再選架構** | 便宜、快,用 IC-vs-horizon 數據決定,避免賭錯架構 | 事後證明兩個「直接建」方向都會白做 |
+| 偵察範圍 | 精實 / **完整** / 超精實試水 | **完整偵察** | 寧可多測,不因範圍太窄漏掉 edge | 五個信號全數實測 |
+| 單日 cost-check 後 | (數據自動收斂,無需人工選) | 聚焦驗證 depth@1h(→ 2b-1) | 唯一扣 taker fee 後淨正的信號,且 horizon 契合 1h 架構 | **FAILED**(單日 IC 0.50 是 regime artifact) |
+| 2b-1 失敗後的分岔 | qi maker 路線 / **cross-asset lead-lag** / 收手 | **cross-asset(→ 2b-2)** | 最後一個沒測過的免費數據假設;harness 現成、成本最低;maker 路線是整個新專案 | **FAILED**(雙動能控制都比信號強) |
+| **現在(2b-2 失敗後)** | 見 §7 三條路 | **未決** — 等 Drake 拍板 | — | — |
+
+注意:§7 的三條路裡**不再包含 cross-asset**——它已在 2b-2 被選過、測過、否證,別重走。
+
+## 7. 未決事項:戰略分岔(接手後第一件事)
 
 三條路都是**結構性不同的方向**,由 Drake 拍板,不是預設繼續哪條:
 
@@ -72,7 +88,7 @@ PYTHONPATH=src venv/bin/python -m scripts.recon.cross_validation \
 2. **換市場** — harness 現成(`--lead/--lag/--symbol` 參數化),但 data.binance.vision 只有 Binance;其他 venue 要新 loaders。先想清楚「哪個市場的費用/波動比更友善」再動手。
 3. **收手/守成** — 讓 1h 助理以 paper 模式跑著(需完整 venv + Ollama,見 spec §4.8 boot 流程),把六輪否證當作「這套流程可信」的證明。
 
-## 7. 文件地圖
+## 8. 文件地圖
 
 - 設計 spec:`docs/superpowers/specs/2026-04-18-personal-trading-assistant-design.md`(主系統)、`2026-06-28-orderbook-microstructure-recon-design.md`(recon)
 - Recon plans + STATUS:`docs/superpowers/plans/2026-06-28-orderbook-recon-phase1.md`、`...-phase2a.md`、`2026-06-29-...-phase2b1-depth-validation.md`(含 STATUS)、`...-phase2b2-cross-asset.md`(含 STATUS)
