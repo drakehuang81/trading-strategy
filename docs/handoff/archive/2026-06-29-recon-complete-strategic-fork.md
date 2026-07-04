@@ -1,6 +1,8 @@
 # 交接:Recon Program 完結 → 戰略分岔點(2026-06-29)
 
-> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。**戰略方向已於 2026-06-29 拍板(§7):Phase 2c「Binance alt-perp 多幣掃描」為主線(帶複製檢驗與事先承諾的終局),paper 助理並行,qi maker 緩議。** §6 是走到這裡的完整決策紀錄。接手者:先看 §7 的 2c 進度與掃描結果,再決定下一步。
+> **TL;DR**:order book edge 偵察計畫已完整跑完——六個免費數據方向假設,六個否證(全部通過事先承諾的四道 gate 檢驗)。**戰略方向已於 2026-06-29 拍板(§7):Phase 2c「Binance alt-perp 多幣掃描」為主線(帶複製檢驗與事先承諾的終局),paper 助理並行,qi maker 緩議。** §6 是走到這裡的完整決策紀錄。
+>
+> **終局補記(2026-06-29 深夜,本文件完結)**:Phase 2c 掃描已執行——**12 幣 × 2 假設共 24 測試全滅(ic_test −0.013~0.062,門檻 0.1),事先承諾的終局條款生效:免費 Binance 數據找方向 edge 永久關閉**。詳見 [Phase 2c STATUS](../../superpowers/plans/2026-06-29-orderbook-recon-phase2c-STATUS.md)。本文件移入 archive;接續脈絡見 `current/` 新交接文件。
 
 ## 1. 專案是什麼
 
@@ -76,7 +78,8 @@ recon program 的每個分岔點、當時的選項、Drake 的決定與結果—
 | 偵察範圍 | 精實 / **完整** / 超精實試水 | **完整偵察** | 寧可多測,不因範圍太窄漏掉 edge | 五個信號全數實測 |
 | 單日 cost-check 後 | (數據自動收斂,無需人工選) | 聚焦驗證 depth@1h(→ 2b-1) | 唯一扣 taker fee 後淨正的信號,且 horizon 契合 1h 架構 | **FAILED**(單日 IC 0.50 是 regime artifact) |
 | 2b-1 失敗後的分岔 | qi maker 路線 / **cross-asset lead-lag** / 收手 | **cross-asset(→ 2b-2)** | 最後一個沒測過的免費數據假設;harness 現成、成本最低;maker 路線是整個新專案 | **FAILED**(雙動能控制都比信號強) |
-| 2b-2 失敗後的分岔 | qi maker / 換市場 / 收手 | **拍板(2026-06-29):掃描框架**(見 §7) | 換市場的「Binance 多幣掃描」版是唯一幾小時可證偽的路;maker 連回測都做不到(無逐筆 L2 歷史);paper 並行零成本 | Phase 2c 進行中 |
+| 2b-2 失敗後的分岔 | qi maker / 換市場 / 收手 | **拍板(2026-06-29):掃描框架**(見 §7) | 換市場的「Binance 多幣掃描」版是唯一幾小時可證偽的路;maker 連回測都做不到(無逐筆 L2 歷史);paper 並行零成本 | Phase 2c 已執行 |
+| Phase 2c 掃描跑完 | (事先登記的終局條款) | **全滅 → 終局生效:免費 Binance 數據方向 edge 永久關閉** | 24 測試無一過 gate,replication 未觸發;「薄 book 訊號較強」先驗未兌現 | **recon program 徹底完結** |
 
 注意:選項裡**不再包含 cross-asset 對 ETH**——已在 2b-2 測過否證;但 BTC book → **alt** 是新假設,包含在 2c 掃描內。
 
