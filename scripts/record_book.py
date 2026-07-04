@@ -10,6 +10,9 @@ book streams (bookTicker / depth*) are served ONLY by the legacy endpoint
 recorder runs one multiplex socket per shard, each with its own reconnect
 loop, appending raw payloads to
     <out>/<kind>/<SYMBOL>/<YYYY-MM-DD>.jsonl   (UTC rollover)
+Finished day files are gzipped hourly in-process (~10-15x smaller). Default
+kinds = depth5@500ms + aggTrade only (~0.5GB/day raw): bookTicker measured
+~11GB/day and is opt-in via --kinds.
 
 Run (long-lived; Ctrl-C to stop):
     PYTHONPATH=src venv/bin/python -m scripts.record_book
@@ -19,7 +22,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gzip
 import json
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,8 +32,14 @@ from pathlib import Path
 from binance import AsyncClient, BinanceSocketManager
 
 DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-DEFAULT_KINDS = ["bookTicker", "aggTrade", "depth5@500ms"]
+# bookTicker dropped from defaults 2026-07-05: measured ~11GB/day raw (~250
+# msg/s/symbol), 96% of total volume. qi (L1 imbalance) is still computable
+# from depth5 top level at 500ms — enough for the seconds-horizon hypothesis.
+# Re-enable tick-level L1 explicitly via --kinds if disk allows.
+DEFAULT_KINDS = ["aggTrade", "depth5@500ms"]
 RECONNECT_BACKOFF_SECS = 5.0
+ROTATION_INTERVAL_SECS = 3600.0
+STALE_GRACE_SECS = 600.0
 
 
 def route_message(msg: dict) -> tuple[str, str, int]:
@@ -54,6 +65,30 @@ def append_jsonl(root: Path, kind: str, symbol: str, ts_ms: int, payload: dict) 
     with path.open("a") as fh:
         fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
     return path
+
+
+def gzip_stale_files(
+    root: Path, today: str, now: float | None = None
+) -> list[Path]:
+    """Gzip day files older than `today` (UTC ISO date) and remove originals.
+
+    Files touched within STALE_GRACE_SECS are skipped, so a writer that just
+    rolled over can still flush late events before compression. Returns the
+    compressed paths (JSONL gzips ~10-15x).
+    """
+    now = time.time() if now is None else now
+    done: list[Path] = []
+    for path in sorted(root.glob("*/*/*.jsonl")):
+        if path.stem >= today:                       # ISO dates sort lexically
+            continue
+        if now - path.stat().st_mtime < STALE_GRACE_SECS:
+            continue
+        gz = path.with_name(path.name + ".gz")
+        with path.open("rb") as src, gzip.open(gz, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+        path.unlink()
+        done.append(gz)
+    return done
 
 
 def split_streams(symbols: list[str], kinds: list[str]) -> dict[str | None, list[str]]:
@@ -101,13 +136,28 @@ async def _record_stream_group(
                 pass
 
 
+async def _rotation_loop(root: Path) -> None:
+    """Hourly: gzip finished day files so long runs don't eat the disk raw."""
+    while True:
+        today = datetime.now(timezone.utc).date().isoformat()
+        try:
+            for gz in gzip_stale_files(root, today):
+                print(f"compressed {gz}", flush=True)
+        except Exception as e:  # noqa: BLE001 — rotation must not kill recording
+            print(f"rotation error ({e!r})", flush=True)
+        await asyncio.sleep(ROTATION_INTERVAL_SECS)
+
+
 async def record(symbols: list[str], kinds: list[str], root: Path) -> None:
-    """Run one recording loop per required shard, concurrently."""
+    """Run one recording loop per required shard + hourly gzip rotation."""
     groups = split_streams(symbols, kinds)
-    await asyncio.gather(*(
-        _record_stream_group(streams, category, root)
-        for category, streams in groups.items()
-    ))
+    await asyncio.gather(
+        _rotation_loop(root),
+        *(
+            _record_stream_group(streams, category, root)
+            for category, streams in groups.items()
+        ),
+    )
 
 
 def main() -> None:

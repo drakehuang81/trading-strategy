@@ -110,9 +110,9 @@ PYTHONPATH=src venv/bin/python -m scripts.record_book
 # 24/7:另開 terminal `caffeinate -dis &`
 ```
 
-錄 BTC/ETH × bookTicker/aggTrade/depth5@500ms → `data/ticks/<kind>/<SYMBOL>/<date>.jsonl`(UTC 日切)。
+錄 BTC/ETH × aggTrade/depth5@500ms → `data/ticks/<kind>/<SYMBOL>/<date>.jsonl`(UTC 日切),過往日檔每小時自動 gzip(~8-15x)。
 注意:Binance futures ws 已分流——book 類只在 legacy 端點、aggTrade 只在 market shard,錄製器自動開雙 socket。
-量級:bookTicker ~200 msg/s/symbol,估 ~400-600MB/天(未壓縮);滿一個月後考慮 gzip 輪替。
+量級(2026-07-05 實測):預設兩路 ~0.5GB/天原始、gzip 後 ~50MB/天。**bookTicker 已從預設拿掉**——實測 ~250 msg/s/symbol ≈ 11GB/天(佔 96%),laptop 磁碟撐不住;qi(L1 imbalance)從 depth5 頂層即可算(500ms 解析度,秒級假設夠用)。要 tick 級 L1 用 `--kinds` 明確加回。
 
 ## 目前 git 狀態(2026-06-29 更新)
 

@@ -1,8 +1,15 @@
-"""Tests for the book-stream recorder's pure parts (routing + append)."""
+"""Tests for the book-stream recorder's pure parts (routing + append + rotation)."""
+import gzip
 import json
+import time
 from pathlib import Path
 
-from scripts.record_book import append_jsonl, route_message, split_streams
+from scripts.record_book import (
+    append_jsonl,
+    gzip_stale_files,
+    route_message,
+    split_streams,
+)
 
 
 def test_split_streams_by_shard():
@@ -46,3 +53,25 @@ def test_append_jsonl_daily_rollover(tmp_path: Path):
     assert p1 != p2
     assert p1.parent == tmp_path / "bookTicker" / "BTCUSDT"
     assert json.loads(p1.read_text().strip()) == {"x": 1}
+
+
+def test_gzip_stale_files_compresses_past_days_only(tmp_path: Path):
+    d1 = 1700000000000            # 2023-11-14 UTC
+    d2 = d1 + 86_400_000          # 2023-11-15 UTC
+    old = append_jsonl(tmp_path, "aggTrade", "BTCUSDT", d1, {"x": 1})
+    today = append_jsonl(tmp_path, "aggTrade", "BTCUSDT", d2, {"x": 2})
+    # pretend an hour has passed so `old` is outside the write-grace window
+    done = gzip_stale_files(tmp_path, today="2023-11-15", now=time.time() + 3600)
+    assert done == [old.with_name(old.name + ".gz")]
+    assert not old.exists()                      # original removed
+    assert today.exists()                        # today's file untouched
+    with gzip.open(done[0], "rt") as fh:
+        assert json.loads(fh.read().strip()) == {"x": 1}
+
+
+def test_gzip_stale_files_skips_recently_written(tmp_path: Path):
+    # a just-rolled-over writer may still flush late events: fresh mtime -> skip
+    d1 = 1700000000000
+    old = append_jsonl(tmp_path, "aggTrade", "BTCUSDT", d1, {"x": 1})
+    assert gzip_stale_files(tmp_path, today="2023-11-15") == []
+    assert old.exists()
