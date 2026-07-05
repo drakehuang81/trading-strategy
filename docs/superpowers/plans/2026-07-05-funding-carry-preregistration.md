@@ -1,7 +1,7 @@
 # 事先登記:跨 universe funding carry(cash-and-carry)研究
 
 **日期**:2026-07-05
-**狀態**:PRE-REGISTERED(本文件 commit 後才允許下載 universe 數據)
+**狀態**:**PASS & REPLICATED**(首跑 verdict 見 §6;Phase 2 spot 稽核未跑)
 **類型**:非方向性 carry 研究——**不觸犯 2026-06-29 終局條款**(該條款關閉的是「免費 Binance 數據找*方向性* edge」;本研究不預測價格方向,收的是 funding 現金流)
 
 ## 0. 為什麼這個問題值得一發子彈
@@ -77,3 +77,26 @@ Step 0 kill、或任一 gate FAIL、或 replication FAIL →「**免費 Binance 
 - `scripts/carry/study.py` — 日表構建 + Step 0 + Phase 1 模擬 + gates(常數區塊 = 本文件的機器可讀鏡像)
 - `tests/unit/scripts/test_carry_*.py` — 純函數單元測試(合成數據)
 - verdict 寫回本文件 + handoff current
+
+## 6. VERDICT(2026-07-05 首跑,參數零改動)
+
+**PASS & REPLICATED**。universe 實際取得 791 個 USDT 永續(含已下市;快照在 `data/carry/universe_snapshot.json`),日表 563,926 rows。
+
+| 判定 | 數字 | 結果 |
+|------|------|------|
+| Step 0 毛上界(notional) | train **+23.8%** / test **+71.4%**(kill 線 10%;oracle top5 +31.3%/+117.6%) | 存活 |
+| G1 OOS(deployed 淨 APR) | train **+7.4%**,test **+23.8%** | PASS |
+| G2 懶惰對照 | lazy BTC+ETH **+3.4%**,策略超出 +20.4pp(門檻 +2pp) | PASS |
+| G3 絕對門檻 | test +23.8% ≥ 5% | PASS |
+| G4 成本加倍 | test **+23.0%**(80bps RT) | PASS |
+| Replication 2020-07→2022-06 | halves **+32.9%/+6.7%**,full **+19.8%**(lazy +17.2%,門檻 19.2%,**只贏 0.6pp**),2× 成本 +16.8% | PASS |
+
+成交統計:主窗 4 年 70 進 / 65 出,平均滿倉 5 槽——低換手,成本敏感度低(G4 只掉 0.8pp)。
+
+**描述性診斷(不影響 verdict)**:日淨損益 NW t-stat(lag 30)= **7.30**(main)/ **4.18**(repl)。記帳模型 maxDD 0.55%/0.78%、年化 Sharpe 15/11——**這是平滑性假象**:本研究只記 funding 現金流,basis MTM 波動未建模;真實日損益會被 spot-perp 基差波動放大數倍,壓力期(如連環清算)單日 -1%~-3% 屬常態,保證金壓力才是實際主風險。**APR 期望值可信;Sharpe/DD 數字不是真實風險輪廓。**
+
+誠實註記:(a) test 窗 +23.8% 是 2024-2026 牛市 regime 的產物,train 窗 +7.4% 才是乏味 regime 的合理預期;(b) replication 的 G2 只贏 0.6pp——2021 牛市 majors funding 本身就肥,輪動相對 lazy 的增量在那種 regime 很薄;(c) 未建模:交易所對手風險、下市結算細節、alt spot 深度。
+
+### Phase 2(事先登記的部署前 gate,尚未跑)
+
+**Spot 可得性稽核**,操作化定義(在跑稽核前於此鎖定):取主窗+複製窗全部實際持倉 symbol 清單,逐一核對 Binance 是否存在可對沖的 USDT spot 對(1000x 前綴按單位換算視為可對沖);把**無 spot 對沖**的 symbol 從 universe 剔除後重跑 Phase 1 + replication,**全部 gate 須仍過**,否則整體 verdict 降級 FAIL。此定義一經寫下不再放寬。

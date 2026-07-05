@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:研究線已**永久關閉**——六個假設家族 + 24 測試事先登記掃描,全數在四道 gate 下否證(完整脈絡見 [archive/2026-06-29-recon-complete-strategic-fork.md](../archive/2026-06-29-recon-complete-strategic-fork.md))。**目前沒有任何進行中的研究**。活著的只有兩個營運項目(§1),**2026-07-05 起兩者都已在背景長跑**——接手時先確認它們還活著(`pgrep -fl 'src.cli|record_book'`)。接手者不需要讀完整個 recon 歷史才能動手——本文件自足。
+> **TL;DR**:**方向性**研究線已永久關閉——六個假設家族 + 24 測試事先登記掃描全滅(脈絡見 [archive/2026-06-29-recon-complete-strategic-fork.md](../archive/2026-06-29-recon-complete-strategic-fork.md))。但 **2026-07-05 非方向性 funding carry 研究首次全 gate PASS & REPLICATED**(§1c)——這不觸犯終局條款(它關的是方向 edge)。營運面:兩個長跑 2026-07-05 起在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -33,6 +33,18 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 - 啟動:`nohup env PYTHONPATH=src venv/bin/python -m scripts.record_book >> ~/record_book.log 2>&1 &`(主 repo 根目錄)。驗證:`stat -f "%z %N" data/ticks/*/*/*.jsonl` 間隔 10 秒比對有增長。
 
 錄滿 2–3 個月前不投入任何 maker 研究。laptop 休眠會斷錄(24/7 要 `caffeinate`);中斷可接受——資料是 append-only 日檔,重啟即續。
+
+### 1c. Funding carry 研究(2026-07-05 新開,首個全 PASS)
+
+**問題**:跨全 universe(791 USDT 永續,含已下市)的 cash-and-carry(long spot + short perp 收正 funding)成本後能否過四道 gate?**非方向性,不觸犯 2026-06-29 終局條款。**
+
+**狀態:PASS & REPLICATED**(專案史上第一個)——事先登記 → Step 0 毛上界存活(train +23.8%/test +71.4% notional)→ 四 gate 全過(deployed 淨 APR:train +7.4%/test +23.8%,lazy 對照 +3.4%,2× 成本 +23.0%)→ 複製窗 2020-2022 再全過(+19.8%,**G2 只贏 0.6pp**)。NW t=7.3/4.2。
+
+**必讀警語**:Sharpe 15/maxDD 0.5% 是**記帳模型假象**(basis MTM 未建模);真實風險=基差波動下的保證金壓力+交易所風險。test 窗 +23.8% 是牛市 regime;乏味 regime 合理預期是 train 的 +7.4%。
+
+**下一步(事先登記,未跑)**:Phase 2 spot 可得性稽核——持倉名單逐一核對 USDT spot 對,剔除無對沖者後重跑,全 gate 須仍過,否則降級 FAIL。**在 Phase 2 過之前,不寫任何執行/部署程式碼。**
+
+文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 verdict);程式 `scripts/carry/{universe,study}.py`;數據 `data/carry/`(~17MB,可由 universe.py 重建)。
 
 ## 2. 環境與資產(接手必讀)
 
