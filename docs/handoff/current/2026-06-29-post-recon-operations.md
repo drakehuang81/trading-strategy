@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:**兩條研究線都已永久關閉**——方向性:六假設家族+24 測試全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));非方向性 funding carry:**v1(現在式稽核,差 1.0pp)與 v2(point-in-time 重開,差 0.2pp)先後死在同一道複製窗 G2**,2026-07-06 起兩個證據基礎永久關閉、無 v3(§1c)。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
+> **TL;DR**:**免費 Binance 數據的機制空間已全數掃畢並永久關閉**——方向性:6 家族+24 掃描全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));funding carry:v1/v2 雙證據基礎先後死在複製窗 G2(差 1.0pp/0.2pp,2026-07-05/06,§1c);basis 均值回歸:Step 0 毛上界 KILL(train +4.0%/test +0.0%,2026-07-06,§1d)。5E P2 清單至此全有終局 verdict。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -48,7 +48,11 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 
 **永久關閉**:「免費 Binance funding 數據 cash-and-carry」家族(含正/負側、任何參數/窗口變體)不重訪。留下的真相:spot 可對沖 universe 上的正 carry 現象在 2022-2026 主窗是真的(最嚴苛過濾下四 gate 全過),死的是「協議下可複製」這個 claim;複製窗敗因是 2020-2022 majors funding 本身就肥,輪動增量打不出 +2pp。方法論教訓:稽核 gate 要用 point-in-time 定義,現在式代理會誤殺歷史名字(MATIC/FTM)——教訓成立,verdict 不變。若未來取得實質不同證據基礎(point-in-time spot 上市史+借貸成本),構成**新問題**,須使用者明示批准另立登記。
 
-文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 首跑/§7 終局);程式 `scripts/carry/{universe,study,spot_audit}.py`(15 tests);數據 `data/carry/`(~17MB,可重建)。
+文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 首跑/§7 終局)+ `2026-07-06-funding-carry-pit-preregistration.md`(v2 §4);程式 `scripts/carry/{universe,study,spot_audit,spot_history,study_pit}.py`;數據 `data/carry/`(~17MB,可重建)。
+
+### 1d. Basis 均值回歸(2026-07-06 開題並終局:STEP 0 KILL)
+
+5E P2 清單最後一個未測機制(spot-perp 基差收斂,非方向、非 carry)。事先登記(先驗 ~80% kill,已揭露)→ 今日量前 20 流動 universe、60/10bps 帶、48h timeout → **Step 0 毛上界 train +4.0% / test +0.0%,kill 線 10% → 即殺**。2024 起流動名字的寬 basis 已被套利者消滅,成本連上場機會都沒有。永久關閉。**至此免費 Binance 數據機制空間全數掃畢**——這是本專案研究 program 的完備性終點。文件:`2026-07-06-basis-meanreversion-preregistration.md`;程式 `scripts/basis/study.py`;數據 `data/basis/`(~60MB,可重建)。
 
 ## 2. 環境與資產(接手必讀)
 

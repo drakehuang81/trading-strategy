@@ -1,7 +1,7 @@
 # 事先登記:Binance spot-perp basis 均值回歸(5E P2 清單最後一個未測機制)
 
 **日期**:2026-07-06
-**狀態**:PRE-REGISTERED(本文件 commit 後才允許下載 kline 數據)
+**狀態**:**FINAL — STEP 0 KILL(毛上界 train +4.0% / test +0.0%,kill 線 10%);永久關閉**(§6)
 **合法性**:非方向性(做 spread 收斂,不預測價格)、非 funding carry 家族(賺的是基差收斂不是 funding 現金流)、不在 2026-06-29 方向性終局與 2026-07-05/06 carry 雙終局的關閉範圍內。5E STATUS P2 清單列名("Mean-reversion on basis spreads")但從未被測。測完它,免費 Binance 數據上的全部 P2 機制家族即**掃描完畢**。
 
 **先驗誠實聲明**:登記人先驗認為 Step 0 大概率(~80%)殺掉本問題——流動性 universe 的 basis 被套利者壓得極緊,4 條 taker 腿 ~40bps 成本難以跨越。仍值一發子彈的理由:(a) 它是最後一個未測的合法機制;(b) 2022/2024 的清算級聯期 basis 確實出現過 >100bps 的episodes,量級是否足夠是實證問題;(c) 否定答案完成整個免費數據 program 的完備性。
@@ -40,3 +40,16 @@ train 2022-07-01→2024-06-30;test 2024-07-01→2026-06-30;replication 2020-07-0
 ## 5. 產出物
 
 `scripts/basis/study.py`(下載 + 對齊 + Step 0 + Phase 1)、`tests/unit/scripts/test_basis_study.py`、verdict 回寫本文件 + handoff。
+
+## 6. FINAL VERDICT(2026-07-06 首跑,參數零改動)
+
+**STEP 0 KILL——永久關閉。** Universe(今日量前 20 且雙市場覆蓋 ≥80%):BTC/ETH/SOL/XRP/TLM/BNB/ZEC/DOGE/ADA/BCH/NEAR/BEL/AAVE/XLM/LINK/AVAX/LTC/TRB/TRX/HOT。790 個 episodes(389 個負側,僅描述)。
+
+| Half | top-5 symbol 毛 capture APR(deployed,無成本) | Kill 線 | 結果 |
+|------|------|------|------|
+| train 2022-07→2024-06 | **+4.0%** | 10% | KILL |
+| test 2024-07→2026-06 | **+0.0%** | 10% | KILL |
+
+解讀:60bps 觸發帶的正 basis episodes 在流動 universe 上毛利就已趨近零——2024 起 spot-perp 套利效率讓寬 basis 幾乎不再出現於可交易名字;40bps 成本連上場的機會都沒有。先驗(~80% Step 0 kill)應驗。
+
+**Program 完備性聲明**:至此,免費 Binance 數據上的全部機制家族皆有事先登記的終局 verdict——方向性(6 家族+24 掃描,2026-06-29 FAIL)、funding carry(v1 現在式+v2 point-in-time,2026-07-05/06 FAIL)、basis 均值回歸(本文件,STEP 0 KILL)。**免費 Binance 數據找 edge 的問題空間整體永久關閉。** 僅存的研究選擇權:qi maker(自錄 tick 數據,時間 gate 至錄滿 2-3 個月,約 2026-09/10)。
