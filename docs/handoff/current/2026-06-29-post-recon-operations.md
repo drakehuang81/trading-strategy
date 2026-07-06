@@ -34,6 +34,8 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 
 錄滿 2–3 個月前不投入任何 maker 研究。laptop 休眠會斷錄(24/7 要 `caffeinate`);中斷可接受——資料是 append-only 日檔,重啟即續。
 
+**已知斷口與修復**:2026-07-05 03:47 UTC 錄製器整個 process 死掉(不是單純斷線)——根因:`AsyncClient.create()` 在 reconnect 迴圈的 `try` 外,休眠喚醒斷網時拋出、單一 shard task 死亡連帶殺掉整個 gather。已修(create 移入 try + client None 防護),2026-07-06 12:49 UTC 重啟。**資料斷口 ~33h(07-05 03:47 → 07-06 12:49 UTC)**,對「錄滿 2-3 個月」的目標無實質影響。若再發現 process 消失:`tail ~/record_book.log` + 用 §1b 的 nohup 指令重啟即可。
+
 ### 1c. Funding carry 研究(2026-07-05 開題並終局:FINAL FAIL)
 
 **問題**:跨全 universe(791 USDT 永續,含已下市)的 cash-and-carry(long spot + short perp 收正 funding)成本後能否過四道 gate?非方向性,不觸犯 2026-06-29 方向性終局條款。

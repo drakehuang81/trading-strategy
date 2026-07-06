@@ -108,15 +108,22 @@ def split_streams(symbols: list[str], kinds: list[str]) -> dict[str | None, list
 async def _record_stream_group(
     streams: list[str], category: str | None, root: Path
 ) -> None:
-    """Reconnecting record loop over one multiplex socket on one shard."""
+    """Reconnecting record loop over one multiplex socket on one shard.
+
+    EVERYTHING network-touching lives inside the try — including
+    AsyncClient.create(). Lesson from the 2026-07-05 outage: create() sat
+    outside the try, threw on a sleep/wake network drop, escaped the loop,
+    and one dead shard task took the whole gather (both shards) down.
+    """
     while True:
-        client = await AsyncClient.create()
+        client = None
         try:
+            client = await AsyncClient.create()
             sock = BinanceSocketManager(client).futures_multiplex_socket(
                 streams, category=category,
             )
             async with sock as stream:
-                print(f"recording {streams} (category={category!r}) -> {root}")
+                print(f"recording {streams} (category={category!r}) -> {root}", flush=True)
                 while True:
                     msg = await stream.recv()
                     if not isinstance(msg, dict) or "stream" not in msg:
@@ -126,14 +133,15 @@ async def _record_stream_group(
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001 — recorder must outlive transient errors
-            print(f"stream error ({e!r}); reconnecting in {RECONNECT_BACKOFF_SECS}s")
+            print(f"stream error ({e!r}); reconnecting in {RECONNECT_BACKOFF_SECS}s", flush=True)
             await asyncio.sleep(RECONNECT_BACKOFF_SECS)
         finally:
             # bound the close: an unresponsive ws must not wedge shutdown
-            try:
-                await asyncio.wait_for(client.close_connection(), timeout=5)
-            except Exception:  # noqa: BLE001
-                pass
+            if client is not None:
+                try:
+                    await asyncio.wait_for(client.close_connection(), timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
 
 
 async def _rotation_loop(root: Path) -> None:
