@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:**免費 Binance 數據的機制空間已全數掃畢並永久關閉**——方向性:6 家族+24 掃描全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));funding carry:v1/v2 雙證據基礎先後死在複製窗 G2(差 1.0pp/0.2pp,2026-07-05/06,§1c);basis 均值回歸:Step 0 毛上界 KILL(train +4.0%/test +0.0%,2026-07-06,§1d)。5E P2 清單至此全有終局 verdict。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
+> **TL;DR**:**免費數據研究篇章已完結(2026-07-06,使用者批准之終局條款)**——五案全滅,皆事先登記:方向性 6 家族+24 掃描(06-29);funding carry v1/v2 雙證據基礎(複製窗 G2 差 1.0/0.2pp);basis 均值回歸(Step 0 毛上界 +4.0%/+0.0% 即殺);跨所 funding spread Binance↔Bybit(**全程最強:主窗 +29% 四 gate 大幅全過,複製窗 2× 成本 −0.5% 陣亡**,§1e)。**目前沒有進行中的研究**;唯一活的選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -49,6 +49,10 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 **永久關閉**:「免費 Binance funding 數據 cash-and-carry」家族(含正/負側、任何參數/窗口變體)不重訪。留下的真相:spot 可對沖 universe 上的正 carry 現象在 2022-2026 主窗是真的(最嚴苛過濾下四 gate 全過),死的是「協議下可複製」這個 claim;複製窗敗因是 2020-2022 majors funding 本身就肥,輪動增量打不出 +2pp。方法論教訓:稽核 gate 要用 point-in-time 定義,現在式代理會誤殺歷史名字(MATIC/FTM)——教訓成立,verdict 不變。若未來取得實質不同證據基礎(point-in-time spot 上市史+借貸成本),構成**新問題**,須使用者明示批准另立登記。
 
 文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 首跑/§7 終局)+ `2026-07-06-funding-carry-pit-preregistration.md`(v2 §4);程式 `scripts/carry/{universe,study,spot_audit,spot_history,study_pit}.py`;數據 `data/carry/`(~17MB,可重建)。
+
+### 1e. 跨所 funding spread(2026-07-06 開題並終局:FAIL,篇章完結)
+
+最後一個機制家族(使用者批准之新 venue 問題;賭注=FAIL 則免費數據篇章完結)。Binance↔Bybit perp-perp,559 共同 keys(563 Bybit symbols 零錯誤下載)。**全程最強候選**:Step 0 train +32.8%/test +62.9%;Phase 1 四 gate 大幅全過(test **+29.0%**,2× 成本 +11.8%,lazy 對照 −7.6%);複製窗 1× 成本全過(+9.7%)——**2× 成本 −0.5% 陣亡**(高換手 ~85 cycle/年 × 2020-2022 spread 薄,成本拖累 ≈10pp/年)。已知極限:Bybit 側早期 alt 覆蓋薄+倖存者偏差(登記時揭露)。永久關閉。文件:`2026-07-06-xvenue-funding-spread-preregistration.md` §6;程式 `scripts/xvenue/{bybit,study}.py`;數據 `data/xvenue/`(12MB,可重建)。
 
 ### 1d. Basis 均值回歸(2026-07-06 開題並終局:STEP 0 KILL)
 

@@ -1,7 +1,7 @@
 # 事先登記:跨所 funding spread(Binance↔Bybit perp-perp)
 
 **日期**:2026-07-06
-**狀態**:PRE-REGISTERED(本文件 commit 後才允許下載 Bybit 數據)
+**狀態**:**FINAL — FAIL(複製窗 2× 成本 gate −0.5%);終局賭注生效:免費數據研究篇章完結**(§6)
 **開題授權**:免費 Binance 數據空間已全數掃畢(方向/carry/basis 三終局);新 venue 問題依終局條款例外通道,**使用者已於 2026-07-06 明示批准**。
 **終局賭注**:本研究任一關 FAIL → 跨所 funding spread 於免費 CEX 數據永久關閉,且**整個免費數據研究篇章從此完結**(使用者批准選項之原文)。
 
@@ -51,3 +51,20 @@ train 2022-07-01→2024-06-30;test 2024-07-01→2026-06-30;replication 2020-07-0
 ## 5. 產出物
 
 `scripts/xvenue/bybit.py`(下載)、`scripts/xvenue/study.py`(spread 表 + Step 0 + Phase 1 + 複製)、`tests/unit/scripts/test_xvenue_study.py`、verdict 回寫本文件 + handoff。
+
+## 6. FINAL VERDICT(2026-07-06 首跑,參數零改動)
+
+**FAIL——複製窗 2× 成本 gate 翻負(−0.5%);依終局賭注,跨所 spread 永久關閉,且整個免費數據研究篇章從此完結。**
+
+數據:563/563 Bybit symbols 下載零錯誤;559 個共同 canonical keys,374,406 日行。
+
+| 判定 | 數字 | 結果 |
+|------|------|------|
+| Step 0 | train **+32.8%** / test **+62.9%**(kill 10%) | 存活 |
+| Phase 1 | train **+11.7%** / test **+29.0%** / 2× **+11.8%** / lazy **−7.6%**;1123 進 1118 出 | **四道全過,全程最大幅度** |
+| Replication 1× 成本 | halves +12.7%/+6.8%,full **+9.7%**(≥5% ✓;lazy −4.1%,G2 ✓) | 過 |
+| Replication 2× 成本 | **−0.5%** | **FAIL** |
+
+**結構性解讀(記錄,不作翻案)**:(a) 這是整個 program 最強的候選——主窗淨 +29% 且對成本加倍穩健;死因是**高換手**(sign-flip 出場,~85 cycle/年)撞上**早期 spread 薄**:2020-2022 複製窗成本拖累 ≈10pp/年,加倍即滅頂。(b) lazy 對照兩窗皆負(−7.6%/−4.1%)——majors spread 太小、翻向成本吃光,證明對照設計有效。(c) Bybit 側 2020-2021 alt 覆蓋薄 + 倖存者偏差(已登記揭露)使複製窗先天不利;這是本研究證據基礎的已知極限,不構成重跑理由。
+
+**Program 終局聲明**:依使用者批准之條款,免費數據(Binance + 跨所 CEX)的獲利機制研究**全部完結**——方向性、funding carry(×2 證據基礎)、basis 均值回歸、跨所 funding spread,五案皆有事先登記終局。存活選項僅餘 **qi maker**(自錄 tick,約 2026-09/10 可開題)。任何重啟均須使用者明示批准且須有實質新證據基礎。
