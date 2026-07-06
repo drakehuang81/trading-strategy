@@ -148,3 +148,28 @@ def test_simulate_records_held_ever_for_audit():
     rows = days_of("X", D(2024, 1, 1), [0.001] * 10)
     res = simulate(make_daily(rows), D(2024, 1, 1), D(2024, 1, 10))
     assert res.held_ever == {"X"}
+
+
+def test_apply_pit_hedgeability_gates_months():
+    from scripts.carry.study import apply_pit_hedgeability
+
+    # X seasoned-eligible all Jan-Feb, but spot hedge exists in Jan only
+    rows = days_of("X", D(2024, 1, 30), [0.001] * 4)  # Jan 30,31, Feb 1,2
+    out = apply_pit_hedgeability(make_daily(rows), {"X": ["2024-01"]})
+    assert out["eligible"].to_list() == [True, True, False, False]
+    assert out.columns == ["symbol", "day", "fund_day", "eligible"]
+
+
+def test_simulate_forced_exit_when_hedge_delists_mid_hold():
+    # rich funding throughout, but eligibility dies at day8 -> forced exit
+    rows = [
+        ("X", D(2024, 1, 1) + dt.timedelta(days=i), 0.002, i < 7)
+        for i in range(10)
+    ]
+    rows += days_of("FILLER", D(2024, 1, 1), [0.0] * 10)
+    res = simulate(make_daily(rows), D(2024, 1, 1), D(2024, 1, 10))
+    assert res.entries == 1 and res.exits == 1
+    day8 = res.days.index(D(2024, 1, 8))
+    assert res.n_held[day8] == 0          # exited the day eligibility died
+    w = 1.0 / PRE_REGISTERED["slots"]
+    assert res.net[day8] == pytest.approx(-w * PRE_REGISTERED["half_rt_cost"])

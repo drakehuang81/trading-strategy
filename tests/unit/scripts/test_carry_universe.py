@@ -67,3 +67,18 @@ def test_spot_audit_hedgeable_mapping():
     assert not hedgeable("DEADUSDT", bases)        # spot not TRADING
     assert not hedgeable("NOSPOTUSDT", bases)
     assert not hedgeable("1000USDT", bases)        # prefix-only stays unhedged
+
+
+def test_spot_history_candidates_and_month_parse():
+    from scripts.carry.spot_history import parse_month_files, spot_candidates
+
+    assert spot_candidates("BTCUSDT") == ["BTCUSDT"]
+    assert spot_candidates("1000PEPEUSDT") == ["1000PEPEUSDT", "PEPEUSDT"]
+    assert spot_candidates("1000000MOGUSDT") == ["1000000MOGUSDT", "MOGUSDT"]
+
+    keys = [
+        "data/spot/monthly/klines/PEPEUSDT/1d/PEPEUSDT-1d-2023-05.zip",
+        "data/spot/monthly/klines/PEPEUSDT/1d/PEPEUSDT-1d-2023-05.zip.CHECKSUM",
+        "data/spot/monthly/klines/PEPEUSDT/1d/PEPEUSDT-1d-2023-06.zip",
+    ]
+    assert parse_month_files(keys) == {"2023-05", "2023-06"}

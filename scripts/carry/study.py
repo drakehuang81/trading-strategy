@@ -104,6 +104,31 @@ def with_trail_apr(daily: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def apply_pit_hedgeability(
+    daily: pl.DataFrame, perp_months: dict[str, list[str]]
+) -> pl.DataFrame:
+    """AND point-in-time spot hedgeability into `eligible` (v2 study).
+
+    perp_months: perp symbol -> YYYY-MM months its spot hedge traded
+    (from scripts.carry.spot_history). Days outside those months lose
+    eligibility, which blocks entries AND force-exits held positions
+    (simulate exits on ineligibility).
+    """
+    pairs = [(s, m) for s, months in perp_months.items() for m in months]
+    hedge = pl.DataFrame(
+        {"symbol": [p[0] for p in pairs], "month": [p[1] for p in pairs]},
+        schema={"symbol": pl.Utf8, "month": pl.Utf8},
+    ).with_columns(pl.lit(True).alias("hedge_ok"))
+    return (
+        daily.with_columns(pl.col("day").dt.strftime("%Y-%m").alias("month"))
+        .join(hedge, on=["symbol", "month"], how="left")
+        .with_columns(
+            (pl.col("eligible") & pl.col("hedge_ok").fill_null(False)).alias("eligible")
+        )
+        .drop("month", "hedge_ok")
+    )
+
+
 @dataclass
 class SimResult:
     """Daily net PnL on NOTIONAL (deploy scaling applied at reporting)."""
@@ -150,10 +175,13 @@ def simulate(daily: pl.DataFrame, start: dt.date, end: dt.date) -> SimResult:
     for day in sorted(by_day):
         rows = by_day[day]
         day_cost = 0.0
-        # exits first: signal below band, or data missing/ended
+        # exits first: signal below band, data missing/ended, or hedge gone.
+        # (Ineligibility exit is a no-op for v1 frames — seasoning-only
+        # eligibility is monotone — and implements v2's forced exit when
+        # the spot hedge delists mid-hold.)
         for sym in sorted(held):
-            trail = rows.get(sym, (None, None, False))[1]
-            if trail is None or trail < exit_apr:
+            _, trail, elig = rows.get(sym, (None, None, False))
+            if trail is None or trail < exit_apr or not elig:
                 held.discard(sym)
                 day_cost += w * cost
                 res.exits += 1
