@@ -1,7 +1,7 @@
 # 事先登記 v2:point-in-time 可對沖 universe 上的 funding carry
 
 **日期**:2026-07-06
-**狀態**:PRE-REGISTERED(本文件 commit 後才允許下載 spot 上市史數據)
+**狀態**:**FINAL — FAIL(複製窗 G2 差 0.2pp);carry 於兩個證據基礎下永久關閉,無 v3**(§4)
 **開題授權**:v1 終局條款規定新證據基礎須使用者明示批准——**已於 2026-07-06 批准**(選項「批准:point-in-time carry」)。
 
 ## 0. 與 v1 的關係(2026-07-05-funding-carry-preregistration.md,FINAL FAIL)
@@ -38,3 +38,23 @@ v2 是**新問題**:改用 `data.binance.vision` 的 **spot 月度 kline 目錄*
 - `scripts/carry/study_pit.py` — PIT 過濾 + 沿用 study.py 全部函數重跑全鏈
 - `simulate()` 增加「不可對沖 → 強制出場」語義(對 v1 輸入可證明為 no-op:v1 的 eligible 對時間單調不減)
 - verdict 寫回本文件 + handoff current
+
+## 4. FINAL VERDICT(2026-07-06 首跑,參數零改動)
+
+**FAIL——複製窗 G2 差 0.2pp;§2 終局條款生效:cash-and-carry 於免費 Binance 數據的兩個證據基礎(現在式/point-in-time)下永久關閉,不再有 v3。**
+
+PIT universe:466/791 個 perp 有 spot 上市史(比現在式 381 多 85 個歷史名字)。
+
+| 判定 | 數字 | 結果 |
+|------|------|------|
+| Step 0 | train +16.9% / test +18.9%(kill 10%) | 存活 |
+| Phase 1 | train +6.9% / test **+5.9%** / 2× +3.8% / lazy +3.4% | **四道全過**(G2 剩 0.5pp、G3 剩 0.9pp) |
+| Replication | halves +33.0%/+5.1%,full **+19.0%**,2× +16.1%,lazy +17.2% | **G2 需 ≥19.2%,差 0.2pp → FAIL** |
+
+**結構性結論(兩個獨立證據基礎、同一 gate 陣亡,這是 regime 事實不是資料工件)**:
+
+1. **正 carry 期望值存在但薄**:誠實 PIT universe 上 test 淨 APR 只有 +5.9%——v1 未過濾版的 +23.8% 大半來自**不可對沖名字**的 funding。可實際執行的 carry,扣掉未建模的 basis MTM 與交易所風險後,與穩定幣/短債收益的差距不具吸引力(G3 只剩 0.9pp 餘裕)。
+2. **「輪動勝 lazy majors +2pp」在 2020-2022 不成立**:當年 majors funding 本身 +17.2%,alt 輪動的增量打不進 2pp。v1(差 1.0pp)與 v2(差 0.2pp)在同一處死亡,互為複製。
+3. 方法論教訓已兌現仍不夠:把 v1 的定義缺陷修掉(PIT)確實讓複製窗變好(18.2%→19.0%),但差距的主體是 regime,不是量測誤差。
+
+**關閉範圍**:免費 Binance 數據 cash-and-carry,全部證據基礎、全部參數/窗口變體,**永久**。未來唯一例外通道是「非 Binance 數據的全新 venue 問題」,依慣例須使用者明示批准另立登記。

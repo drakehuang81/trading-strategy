@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:**兩條研究線都已永久關閉**——方向性:六假設家族+24 測試全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));非方向性 funding carry:2026-07-05 一路過到複製窗,**最後死在 Phase 2 spot 稽核**(§1c,差 1.0pp,依鎖定定義降級)。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
+> **TL;DR**:**兩條研究線都已永久關閉**——方向性:六假設家族+24 測試全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));非方向性 funding carry:**v1(現在式稽核,差 1.0pp)與 v2(point-in-time 重開,差 0.2pp)先後死在同一道複製窗 G2**,2026-07-06 起兩個證據基礎永久關閉、無 v3(§1c)。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -36,7 +36,11 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 
 **已知斷口與修復**:2026-07-05 03:47 UTC 錄製器整個 process 死掉(不是單純斷線)——根因:`AsyncClient.create()` 在 reconnect 迴圈的 `try` 外,休眠喚醒斷網時拋出、單一 shard task 死亡連帶殺掉整個 gather。已修(create 移入 try + client None 防護),2026-07-06 12:49 UTC 重啟。**資料斷口 ~33h(07-05 03:47 → 07-06 12:49 UTC)**,對「錄滿 2-3 個月」的目標無實質影響。若再發現 process 消失:`tail ~/record_book.log` + 用 §1b 的 nohup 指令重啟即可。
 
-### 1c. Funding carry 研究(2026-07-05 開題並終局:FINAL FAIL)
+### 1c. Funding carry 研究(v1+v2 雙終局:FAIL,2026-07-06 起永久關閉)
+
+**v2 補記(2026-07-06)**:使用者批准後以 point-in-time 證據基礎重開(spot 月度 kline 目錄 = 歷史上市狀態;466/791 可對沖,gate 一字不改)——**Step 0 存活、四 gate 全過(test +5.9%)、複製窗 G2 差 0.2pp 再死**。v1 差 1.0pp、v2 差 0.2pp,同一 gate 陣亡互為複製:**「輪動勝 lazy majors +2pp」在 2020-2022 是 regime 上不成立**,且誠實可對沖 universe 的 carry 只有 +5.9%(v1 的 +23.8% 大半來自不可對沖名字)。cash-and-carry 於兩個證據基礎下**永久關閉,無 v3**(詳見 `2026-07-06-funding-carry-pit-preregistration.md` §4)。
+
+以下為 v1 記錄:
 
 **問題**:跨全 universe(791 USDT 永續,含已下市)的 cash-and-carry(long spot + short perp 收正 funding)成本後能否過四道 gate?非方向性,不觸犯 2026-06-29 方向性終局條款。
 
