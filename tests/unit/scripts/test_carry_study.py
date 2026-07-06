@@ -142,3 +142,9 @@ def test_lazy_control_btc_eth_mean_minus_one_entry():
     apr = lazy_control(make_daily(rows), D(2024, 1, 1), D(2024, 1, 4))
     total = 0.0003 * 4 - PRE_REGISTERED["half_rt_cost"]
     assert apr == pytest.approx(total / 4 * 365 / PRE_REGISTERED["deploy_factor"])
+
+
+def test_simulate_records_held_ever_for_audit():
+    rows = days_of("X", D(2024, 1, 1), [0.001] * 10)
+    res = simulate(make_daily(rows), D(2024, 1, 1), D(2024, 1, 10))
+    assert res.held_ever == {"X"}

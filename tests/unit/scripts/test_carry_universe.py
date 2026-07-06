@@ -48,3 +48,22 @@ def test_read_funding_csv_headerless_and_two_column_variants():
     df2 = read_funding_csv(two_col)
     assert df2["rate"].to_list() == [0.0002]
     assert df2["interval_h"].to_list() == [None]
+
+
+def test_spot_audit_hedgeable_mapping():
+    from scripts.carry.spot_audit import hedgeable, spot_bases
+
+    info = {"symbols": [
+        {"baseAsset": "BTC", "quoteAsset": "USDT", "status": "TRADING"},
+        {"baseAsset": "PEPE", "quoteAsset": "USDT", "status": "TRADING"},
+        {"baseAsset": "MOG", "quoteAsset": "USDT", "status": "TRADING"},
+        {"baseAsset": "DEAD", "quoteAsset": "USDT", "status": "BREAK"},
+        {"baseAsset": "EUR", "quoteAsset": "BTC", "status": "TRADING"},
+    ]}
+    bases = spot_bases(info)
+    assert hedgeable("BTCUSDT", bases)
+    assert hedgeable("1000PEPEUSDT", bases)        # unit-converted hedge
+    assert hedgeable("1000000MOGUSDT", bases)
+    assert not hedgeable("DEADUSDT", bases)        # spot not TRADING
+    assert not hedgeable("NOSPOTUSDT", bases)
+    assert not hedgeable("1000USDT", bases)        # prefix-only stays unhedged

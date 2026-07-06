@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:**方向性**研究線已永久關閉——六個假設家族 + 24 測試事先登記掃描全滅(脈絡見 [archive/2026-06-29-recon-complete-strategic-fork.md](../archive/2026-06-29-recon-complete-strategic-fork.md))。但 **2026-07-05 非方向性 funding carry 研究首次全 gate PASS & REPLICATED**(§1c)——這不觸犯終局條款(它關的是方向 edge)。營運面:兩個長跑 2026-07-05 起在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
+> **TL;DR**:**兩條研究線都已永久關閉**——方向性:六假設家族+24 測試全滅(2026-06-29,見 [archive](../archive/2026-06-29-recon-complete-strategic-fork.md));非方向性 funding carry:2026-07-05 一路過到複製窗,**最後死在 Phase 2 spot 稽核**(§1c,差 1.0pp,依鎖定定義降級)。**目前沒有進行中的研究**;唯一活的研究選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -34,17 +34,15 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 
 錄滿 2–3 個月前不投入任何 maker 研究。laptop 休眠會斷錄(24/7 要 `caffeinate`);中斷可接受——資料是 append-only 日檔,重啟即續。
 
-### 1c. Funding carry 研究(2026-07-05 新開,首個全 PASS)
+### 1c. Funding carry 研究(2026-07-05 開題並終局:FINAL FAIL)
 
-**問題**:跨全 universe(791 USDT 永續,含已下市)的 cash-and-carry(long spot + short perp 收正 funding)成本後能否過四道 gate?**非方向性,不觸犯 2026-06-29 終局條款。**
+**問題**:跨全 universe(791 USDT 永續,含已下市)的 cash-and-carry(long spot + short perp 收正 funding)成本後能否過四道 gate?非方向性,不觸犯 2026-06-29 方向性終局條款。
 
-**狀態:PASS & REPLICATED**(專案史上第一個)——事先登記 → Step 0 毛上界存活(train +23.8%/test +71.4% notional)→ 四 gate 全過(deployed 淨 APR:train +7.4%/test +23.8%,lazy 對照 +3.4%,2× 成本 +23.0%)→ 複製窗 2020-2022 再全過(+19.8%,**G2 只贏 0.6pp**)。NW t=7.3/4.2。
+**完整判定鏈(全程事先登記,參數零改動)**:Step 0 存活(毛上界 train +23.8%/test +71.4%)→ Phase 1 四 gate 全過(deployed 淨 test +23.8%,NW t=7.3)→ 複製窗全過(+19.8%,G2 只贏 0.6pp)→ **Phase 2 spot 稽核:99 個持倉名字 47 個今日無 spot 對沖,universe 791→381 重跑——主窗仍全過(test +7.3%),但複製窗 G2 差 1.0pp(+18.2% vs 需 19.2%)→ 依鎖定定義降級 FAIL,終局條款生效**。
 
-**必讀警語**:Sharpe 15/maxDD 0.5% 是**記帳模型假象**(basis MTM 未建模);真實風險=基差波動下的保證金壓力+交易所風險。test 窗 +23.8% 是牛市 regime;乏味 regime 合理預期是 train 的 +7.4%。
+**永久關閉**:「免費 Binance funding 數據 cash-and-carry」家族(含正/負側、任何參數/窗口變體)不重訪。留下的真相:spot 可對沖 universe 上的正 carry 現象在 2022-2026 主窗是真的(最嚴苛過濾下四 gate 全過),死的是「協議下可複製」這個 claim;複製窗敗因是 2020-2022 majors funding 本身就肥,輪動增量打不出 +2pp。方法論教訓:稽核 gate 要用 point-in-time 定義,現在式代理會誤殺歷史名字(MATIC/FTM)——教訓成立,verdict 不變。若未來取得實質不同證據基礎(point-in-time spot 上市史+借貸成本),構成**新問題**,須使用者明示批准另立登記。
 
-**下一步(事先登記,未跑)**:Phase 2 spot 可得性稽核——持倉名單逐一核對 USDT spot 對,剔除無對沖者後重跑,全 gate 須仍過,否則降級 FAIL。**在 Phase 2 過之前,不寫任何執行/部署程式碼。**
-
-文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 verdict);程式 `scripts/carry/{universe,study}.py`;數據 `data/carry/`(~17MB,可由 universe.py 重建)。
+文件:`docs/superpowers/plans/2026-07-05-funding-carry-preregistration.md`(§6 首跑/§7 終局);程式 `scripts/carry/{universe,study,spot_audit}.py`(15 tests);數據 `data/carry/`(~17MB,可重建)。
 
 ## 2. 環境與資產(接手必讀)
 

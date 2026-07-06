@@ -113,6 +113,7 @@ class SimResult:
     n_held: list[int] = field(default_factory=list)
     entries: int = 0
     exits: int = 0
+    held_ever: set[str] = field(default_factory=set)        # audit trail
 
     def net_apr_deployed(self, start: dt.date, end: dt.date, cost_mult: float = 1.0) -> float:
         rows = [
@@ -167,6 +168,7 @@ def simulate(daily: pl.DataFrame, start: dt.date, end: dt.date) -> SimResult:
         )
         for trail, sym in candidates[: max(0, k - len(held))]:
             held.add(sym)
+            res.held_ever.add(sym)
             day_cost += w * cost
             res.entries += 1
         # collect today's funding on held names (missing counts as 0)

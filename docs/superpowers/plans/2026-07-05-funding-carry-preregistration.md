@@ -1,7 +1,7 @@
 # 事先登記:跨 universe funding carry(cash-and-carry)研究
 
 **日期**:2026-07-05
-**狀態**:**PASS & REPLICATED**(首跑 verdict 見 §6;Phase 2 spot 稽核未跑)
+**狀態**:**FINAL — FAIL(Phase 2 稽核降級);終局條款生效,問題永久關閉**(§6/§7)
 **類型**:非方向性 carry 研究——**不觸犯 2026-06-29 終局條款**(該條款關閉的是「免費 Binance 數據找*方向性* edge」;本研究不預測價格方向,收的是 funding 現金流)
 
 ## 0. 為什麼這個問題值得一發子彈
@@ -97,6 +97,25 @@ Step 0 kill、或任一 gate FAIL、或 replication FAIL →「**免費 Binance 
 
 誠實註記:(a) test 窗 +23.8% 是 2024-2026 牛市 regime 的產物,train 窗 +7.4% 才是乏味 regime 的合理預期;(b) replication 的 G2 只贏 0.6pp——2021 牛市 majors funding 本身就肥,輪動相對 lazy 的增量在那種 regime 很薄;(c) 未建模:交易所對手風險、下市結算細節、alt spot 深度。
 
-### Phase 2(事先登記的部署前 gate,尚未跑)
+### Phase 2(事先登記的部署前 gate)
 
 **Spot 可得性稽核**,操作化定義(在跑稽核前於此鎖定):取主窗+複製窗全部實際持倉 symbol 清單,逐一核對 Binance 是否存在可對沖的 USDT spot 對(1000x 前綴按單位換算視為可對沖);把**無 spot 對沖**的 symbol 從 universe 剔除後重跑 Phase 1 + replication,**全部 gate 須仍過**,否則整體 verdict 降級 FAIL。此定義一經寫下不再放寬。
+
+## 7. FINAL VERDICT(2026-07-05 Phase 2 稽核)
+
+**FAIL——依 §6 鎖定定義降級;§4 終局條款生效:「免費 Binance funding 數據的 cash-and-carry」問題永久關閉。**
+
+| 稽核項 | 結果 |
+|--------|------|
+| 實際持倉 symbol(兩窗合計) | 99 個 |
+| 今日無 spot 對沖 | **47 個**(如 MATIC/FTM 改名下市、EOS/OCEAN/OMG spot 下市、BTCDOM/DEFI/FOOTBALL 為指數永續) |
+| Universe 過濾 | 791 → **381** |
+| Step 0(過濾後) | train +19.5% / test +14.7% → 存活 |
+| Phase 1(過濾後) | train +5.8% / test **+7.3%** / 2× 成本 +5.7% / lazy +3.4% → **四道 gate 全過** |
+| Replication(過濾後) | halves +31.5%/+4.9%,full **+18.2%**,2× +14.8%——但 lazy +17.2%,**G2 需 ≥19.2%,差 1.0pp → FAIL** |
+
+**誠實記錄,不作為翻案理由**:(a) 主窗在最嚴苛過濾下仍全過——「spot 可對沖 universe 上的正 carry 現象」在 2022-2026 是真實存在的;死掉的是「在事先登記協議下可複製的穩健性」這個 claim。(b) 現在式 spot 檢查會誤殺歷史上可對沖的名字(MATIC 在 2021 是全球最深的 alt spot 市場)——這個保守偏差在鎖定定義時已知悉並接受,不得事後放寬。(c) 複製窗敗在 lazy 對照差距:2020-2022 majors funding 本身就肥(+17.2%),輪動的**增量**在該 regime 打不出 2pp。
+
+**方法論教訓(供未來研究)**:稽核 gate 應以 point-in-time 數據定義(歷史當時的 spot 上市狀態),而非現在式代理;本研究用現在式是已知的設計妥協,代價是把一個主窗全過的現象在複製窗判死。教訓成立,verdict 不變。
+
+**關閉範圍**:整個「免費 Binance funding 數據 cash-and-carry」家族(含正/負側、任何參數變體、任何窗口)。未來若出現**實質不同的證據基礎**(如 point-in-time spot 上市史 + 借貸成本數據),構成新問題,須另立事先登記,且須由使用者明示批准開題。
