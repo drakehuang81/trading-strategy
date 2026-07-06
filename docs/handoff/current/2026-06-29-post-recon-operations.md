@@ -1,6 +1,6 @@
 # 交接:Recon 完結後的營運狀態(2026-06-29)
 
-> **TL;DR**:**免費數據研究篇章已完結(2026-07-06,使用者批准之終局條款)**——五案全滅,皆事先登記:方向性 6 家族+24 掃描(06-29);funding carry v1/v2 雙證據基礎(複製窗 G2 差 1.0/0.2pp);basis 均值回歸(Step 0 毛上界 +4.0%/+0.0% 即殺);跨所 funding spread Binance↔Bybit(**全程最強:主窗 +29% 四 gate 大幅全過,複製窗 2× 成本 −0.5% 陣亡**,§1e)。**目前沒有進行中的研究**;唯一活的選擇權是 qi maker,gate 在錄滿 2-3 個月(§1b,約 2026-09/10)。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
+> **TL;DR**:**免費數據研究篇章已完結(2026-07-06,使用者批准之終局條款)**——五案全滅,皆事先登記:方向性 6 家族+24 掃描(06-29);funding carry v1/v2 雙證據基礎(複製窗 G2 差 1.0/0.2pp);basis 均值回歸(Step 0 毛上界 +4.0%/+0.0% 即殺);跨所 funding spread Binance↔Bybit(**全程最強:主窗 +29% 四 gate 大幅全過,複製窗 2× 成本 −0.5% 陣亡**,§1e)。**qi maker 亦於 2026-07-06 經 Phase A 悲觀下界判定 DEAD**(使用者批准提前開題;每筆 −6.90bps,「成交即錯」,省下 $350-700/月的數據訂閱;§1b)——qi 的資訊量真實但 retail 費率下不可變現。**目前沒有進行中的研究,也沒有未測的機制**;殘存選擇權(純做市形態)先驗極低、屆時須全新登記+批准。營運面:兩個長跑在背景跑(§1a/1b),接手先 `pgrep -fl 'src.cli|record_book'` 確認活著。本文件自足。
 
 ## 1. 兩個活著的項目(2026-06-29 拍板的框架中,尚未執行的部分)
 
@@ -32,7 +32,11 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 - **理由**:qi(L1 imbalance)從 depth5 頂層即可算,500ms 解析度對秒級假設夠用;bookTicker 的增量價值只在 tick 級 maker 排隊模擬,要用 `--kinds` 明確加回。已錄到的 ~70MB bookTicker 樣本壓縮保留在 `data/ticks/bookTicker/`。
 - 啟動:`nohup env PYTHONPATH=src venv/bin/python -m scripts.record_book >> ~/record_book.log 2>&1 &`(主 repo 根目錄)。驗證:`stat -f "%z %N" data/ticks/*/*/*.jsonl` 間隔 10 秒比對有增長。
 
-~~錄滿 2–3 個月前不投入任何 maker 研究。~~ **承諾修訂(2026-07-06,使用者明示批准)**:原 gate 前提「無其他數據可測」不完整(付費 L2 史存在,tardis.dev Academic $350/月起)——qi maker 提前開題。順序:**Phase A 免費悲觀下界**(bookTicker+aggTrades 抽樣日,登記 `2026-07-06-qi-maker-phaseA-preregistration.md`)→ 下界亮眼才進 Phase B 購買提案(再經使用者批准花錢)。**自錄數據繼續累積,保留為未來終驗 OOS 集**——錄製器長跑的價值不變。laptop 休眠會斷錄(24/7 要 `caffeinate`);中斷可接受——資料是 append-only 日檔,重啟即續。
+~~錄滿 2–3 個月前不投入任何 maker 研究。~~ **承諾修訂(2026-07-06,使用者明示批准)**:付費 L2 史存在(tardis.dev $350-700/月)→ qi maker 提前開題,先跑 **Phase A 免費悲觀下界**(登記 `2026-07-06-qi-maker-phaseA-preregistration.md`)。
+
+**Phase A 結果(2026-07-06):DEAD,不買數據**——77,058 筆悲觀成交,每筆淨利 −6.90bps(t=−337,0% 正日);所有 horizon 淨利 ≈ −費用 ⇒ 條件毛利 ≈ +0.1bps,「成交即錯」。qi 的資訊量(秒級 IC 0.37)是真的,**但在 retail 費率下不可變現**。taker 出場式 maker 已否定;殘存形態(純做市、qi 當 skew)對 ETH ~0.2bps spread 的先驗極低。**省下 $350-700/月。**
+
+自錄數據繼續累積(未來若開純做市題,depth5+aggTrade 是素材,屆時須全新登記+使用者批准;先驗已大幅下修)。laptop 休眠會斷錄(24/7 要 `caffeinate`);中斷可接受——資料是 append-only 日檔,重啟即續。
 
 **已知斷口與修復**:2026-07-05 03:47 UTC 錄製器整個 process 死掉(不是單純斷線)——根因:`AsyncClient.create()` 在 reconnect 迴圈的 `try` 外,休眠喚醒斷網時拋出、單一 shard task 死亡連帶殺掉整個 gather。已修(create 移入 try + client None 防護),2026-07-06 12:49 UTC 重啟。**資料斷口 ~33h(07-05 03:47 → 07-06 12:49 UTC)**,對「錄滿 2-3 個月」的目標無實質影響。若再發現 process 消失:`tail ~/record_book.log` + 用 §1b 的 nohup 指令重啟即可。
 
