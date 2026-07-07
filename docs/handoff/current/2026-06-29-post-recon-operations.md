@@ -64,9 +64,10 @@ qi(L1 imbalance)是唯一有真實資訊量的信號(秒級 IC 0.37),但 maker/H
 
 ## 2. 環境與資產(接手必讀)
 
-- **可用的 research venv**:`.claude/worktrees/recon-phase2b1/venv`(3.11,精簡集)。research tests:`venv/bin/pytest tests/research/microstructure/ -q`(38 個,scoped 跑)。
-- **⚠️ 數據快取 ~7GB 在同一個 worktree**:`data/orderbook/{_fw,_cross,_sweep,_integ}/`——12 alt + BTC + ETH 的 depth/klines。**刪 worktree 前先搬走**,重下載要數小時。
-- 主 repo `venv/` 壞(3.9),別用。根目錄 README 過時(pivot 前),有待辦 chip。
+- **唯一運行環境 = 主 repo `venv/`(3.11)**:production + research + 六案研究腳本全在此跑(`venv/bin/pytest tests/ -q`)。
+- **recon worktrees 已於 2026-07-07 拆除**(recon-phase2b1 含 3.2GB 舊快取與 623MB venv;branch 全數已併入 main)——舊快取只服務已永久終局的問題,重下載(數小時)僅在未來全新登記時才需要。殘餘:`.worktrees/pivot-foundation`(舊 pivot,`.env` 已複製到主 repo,可擇日清)。
+- 現存研究數據在主 repo `data/{carry,basis,xvenue,qimaker}/`(合計 ~1.5GB,全部可由各自 script 重建);`data/ticks/` 為錄製器產出,**不可重建,勿刪**。
+- 根目錄 README 過時(pivot 前),有待辦 chip。
 - 通用信號驗證 harness(`scripts/recon/{depth,cross}_validation.py`、`sweep_symbols.py`)可對任何 signal × symbol × window 出四道 gate verdict——**但依終局條款,不再用於免費 Binance 方向假設**;留給未來新數據源(如自錄 L2)或新市場。
 
 ## 3. 完整歷史指路
